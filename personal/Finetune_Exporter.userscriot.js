@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         Finetune Exporter - Exporter Universel (LHS Modified v2)
+// @name         Finetune Exporter - Exporter Universel (LHS Modified v3)
 // @namespace    http://tampermonkey.net/
-// @version      2.0.0-LHS
+// @version      3.0.0-LHS
 // @license      CC BY-NC-SA 4.0
-// @description  Export conversations from ChatGPT, Gemini, DeepSeek, Grok, Claude, Copilot, Cohere, Mistral, Kimi, DeepInfra, DeepAI, Meta AI, Qwen, Perplexity, LinkedIn. Formats: JSON, JSONL, ShareGPT, Alpaca, Markdown, TXT, CSV, HTML. Modified: Fixed position bottom-left + dedicated Quick MD button. No drag.
+// @description  Export conversations from ChatGPT, Gemini, DeepSeek, Grok, Claude, Copilot, Cohere, Mistral, Kimi, DeepInfra, DeepAI, Meta AI, Qwen, Perplexity, LinkedIn. Formats: JSON, JSONL, ShareGPT, Alpaca, Markdown, TXT, CSV, HTML. Modified: buttons placed under profile div on all platforms.
 // @author       Thibaut LOMBARD (@lombardweb) + grave0x (@grave0x)
 // @match        https://chatgpt.com/*
 // @match        https://gemini.google.com/*
@@ -92,7 +92,6 @@
             date: 'Date',
             clearHistory: 'Effacer l\'historique'
         }
-        // ... autres langues peuvent être ajoutées de la même manière
     };
 
     const getStoredLanguage = () => {
@@ -113,7 +112,6 @@
         if (LANGUAGE_LIST.includes(langCode)) {
             currentLang = langCode;
             try { GM_setValue('ai_export_lang', langCode); } catch(e){}
-            // Refresh UI if needed
             if (window.__floatingButton) {
                 window.__floatingButton.recreateMenu();
                 window.__floatingButton.labelEl.textContent = t('export');
@@ -144,30 +142,19 @@
         qs: (selector, parent = document) => parent.querySelector(selector),
         qsa: (selector, parent = document) => Array.from(parent.querySelectorAll(selector)),
 
-        // Helper to get clean text
         getCleanText: (el) => {
             if (!el) return '';
             return el.innerText || el.textContent || '';
         }
     };
 
-    // ==================== 3. HTML -> MARKDOWN (Simple & Robuste) ====================
+    // ==================== 3. HTML -> MARKDOWN ====================
     const markdown = {
-        escape: (text) => {
-            return text
-                .replace(/\\/g, '\\\\')
-                .replace(/\*/g, '\\*')
-                .replace(/_/g, '\\_')
-                .replace(/`/g, '\\`')
-                .replace(/#/g, '\\#')
-                .replace(/\|/g, '\\|');
-        },
+        escape: (text) => text.replace(/\\/g, '\\\\').replace(/\*/g, '\\*').replace(/_/g, '\\_').replace(/`/g, '\\`').replace(/#/g, '\\#').replace(/\|/g, '\\|'),
 
         convertMessage: (role, content) => {
             const roleLabel = role === 'user' ? '**User:**' : '**Assistant:**';
             let md = `${roleLabel}\n\n`;
-            
-            // Basic HTML to MD conversion for common elements
             let processed = content
                 .replace(/<code[^>]*>(.*?)<\/code>/gs, '`$1`')
                 .replace(/<pre[^>]*>(.*?)<\/pre>/gs, '```\n$1\n```')
@@ -178,31 +165,23 @@
                 .replace(/<li[^>]*>(.*?)<\/li>/gs, '- $1\n')
                 .replace(/<ul[^>]*>(.*?)<\/ul>/gs, '$1\n')
                 .replace(/<ol[^>]*>(.*?)<\/ol>/gs, '$1\n')
-                .replace(/<[^>]+>/g, ''); // strip remaining tags
-
+                .replace(/<[^>]+>/g, '');
             md += processed.trim() + '\n\n---\n\n';
             return md;
         },
 
         generate: (conversation, meta) => {
-            let md = `# ${meta.titre || 'Conversation'}\n\n`;
-            md += `**Source:** ${meta.source}\n`;
-            md += `**Exported:** ${meta.exportedAt}\n\n`;
-            md += `---\n\n`;
-
+            let md = `# ${meta.titre || 'Conversation'}\n\n**Source:** ${meta.source}\n**Exported:** ${meta.exportedAt}\n\n---\n\n`;
             conversation.forEach(msg => {
                 md += markdown.convertMessage(msg.role, msg.content);
             });
-
             return md;
         }
     };
 
-    // ==================== 4. DÉTECTION PLATEFORME ====================
+    // ==================== 4. DÉTECTION PLATEFORME & PROFIL CONTAINER ====================
     function detectPlatform() {
         const host = location.hostname;
-        const path = location.pathname;
-
         if (host.includes('chatgpt.com')) return 'chatgpt';
         if (host.includes('gemini.google.com')) return 'gemini';
         if (host.includes('claude.ai')) return 'claude';
@@ -218,8 +197,38 @@
         if (host.includes('cohere.com')) return 'cohere';
         if (host.includes('deepinfra.com')) return 'deepinfra';
         if (host.includes('deepai.org')) return 'deepai';
-
         return 'generic';
+    }
+
+    // Map platform to selector for the profile container (element after which we insert our UI)
+    const profileSelectors = {
+        chatgpt: '[data-testid="user-menu"], .flex-1 .flex-1 .flex .items-center .gap-2:last-child',
+        gemini: '[data-testid="user-avatar"], .user-avatar-container, header [role="button"][aria-label*="account"]',
+        claude: '[data-testid="user-menu"], .UserMenu, header [aria-label="User menu"]',
+        grok: '[data-testid="UserMenu"], [aria-label*="profile"], [aria-label*="account"]',
+        perplexity: '[data-testid="user-menu"], .user-menu, header [aria-label*="profile"]',
+        kimi: '.user-avatar, .profile, header [class*="avatar"]',
+        mistral: '[data-testid="user-menu"], .user-menu, header [aria-label*="profile"]',
+        meta: '[data-testid="user-menu"], .profile-icon, header [aria-label*="profile"]',
+        qwen: '.user-avatar, .profile, header [class*="avatar"]',
+        deepseek: '.user-avatar, .profile, header [class*="avatar"]',
+        copilot: '[data-testid="user-menu"], .profile, header [aria-label*="account"]',
+        linkedin: '.profile-rail, .profile-card, header .profile-trigger',
+        cohere: '[data-testid="user-menu"], .profile, header [aria-label*="profile"]',
+        deepinfra: '[data-testid="user-menu"], .profile, header [aria-label*="profile"]',
+        deepai: '[data-testid="user-menu"], .profile, header [aria-label*="profile"]',
+        generic: 'header, .header, .navbar, .top-bar' // fallback to a header element
+    };
+
+    function getProfileContainer(platform) {
+        const selector = profileSelectors[platform] || profileSelectors.generic;
+        // try multiple selectors if comma separated
+        const selectors = selector.split(',').map(s => s.trim());
+        for (let sel of selectors) {
+            const el = dom.qs(sel);
+            if (el) return el;
+        }
+        return null;
     }
 
     // ==================== 5. GESTIONNAIRES DE PLATEFORMES (Extracteurs) ====================
@@ -227,136 +236,77 @@
         chatgpt: {
             async getConversation() {
                 const messages = [];
-                // ChatGPT uses data-message-author-role
                 const nodes = dom.qsa('[data-message-author-role]');
-                
                 if (nodes.length === 0) {
-                    // Fallback for newer UI
                     const fallback = dom.qsa('.group\\/conversation-turn, [class*="message"]');
                     fallback.forEach(el => {
-                        const role = el.getAttribute('data-message-author-role') || 
-                                    (el.innerText.toLowerCase().includes('you') ? 'user' : 'assistant');
+                        const role = el.getAttribute('data-message-author-role') || (el.innerText.toLowerCase().includes('you') ? 'user' : 'assistant');
                         const contentEl = el.querySelector('.markdown, [class*="message-content"]') || el;
-                        messages.push({
-                            role: role,
-                            content: dom.getCleanText(contentEl)
-                        });
+                        messages.push({ role, content: dom.getCleanText(contentEl) });
                     });
                 } else {
                     nodes.forEach(node => {
                         const role = node.getAttribute('data-message-author-role');
                         const contentEl = node.querySelector('.markdown') || node;
-                        messages.push({
-                            role: role,
-                            content: dom.getCleanText(contentEl)
-                        });
+                        messages.push({ role, content: dom.getCleanText(contentEl) });
                     });
                 }
-
                 const titleEl = dom.qs('title') || dom.qs('h1');
                 const titre = titleEl ? titleEl.textContent.replace(' | ChatGPT', '').trim() : 'ChatGPT Conversation';
-
-                return {
-                    nomSite: 'ChatGPT',
-                    titre: titre,
-                    titreBrut: titre,
-                    conversation: messages
-                };
+                return { nomSite: 'ChatGPT', titre, titreBrut: titre, conversation: messages };
             }
         },
-
         grok: {
             async getConversation() {
                 const messages = [];
-                // Grok on grok.com and x.com uses different structures. Try multiple selectors.
                 let nodes = dom.qsa('[data-testid*="message"], .message, [class*="Message"], [class*="chat-message"]');
-
-                if (nodes.length === 0) {
-                    // More generic fallback for Grok
-                    nodes = dom.qsa('div[role="article"], .prose, [class*="prose"]');
-                }
-
+                if (nodes.length === 0) nodes = dom.qsa('div[role="article"], .prose, [class*="prose"]');
                 nodes.forEach((node, index) => {
-                    // Heuristic: odd = user, even = assistant or check for specific classes
                     let role = index % 2 === 0 ? 'user' : 'assistant';
-                    
-                    // Better detection if possible
                     if (node.getAttribute('data-user') || node.className.includes('user')) role = 'user';
                     if (node.getAttribute('data-assistant') || node.className.includes('assistant')) role = 'assistant';
-
                     const content = dom.getCleanText(node);
-                    if (content.length > 5) {
-                        messages.push({ role, content });
-                    }
+                    if (content.length > 5) messages.push({ role, content });
                 });
-
-                // Try to get title from page
                 const titleEl = dom.qs('title') || dom.qs('h1') || dom.qs('[class*="title"]');
                 const titre = titleEl ? titleEl.textContent.replace('Grok', '').trim() : 'Grok Conversation';
-
-                return {
-                    nomSite: 'Grok',
-                    titre: titre,
-                    titreBrut: titre,
-                    conversation: messages.length > 0 ? messages : [{ role: 'assistant', content: 'No messages extracted. The page structure may have changed.' }]
-                };
+                return { nomSite: 'Grok', titre, titreBrut: titre, conversation: messages.length ? messages : [{ role: 'assistant', content: 'No messages extracted.' }] };
             }
         },
-
         claude: {
             async getConversation() {
                 const messages = [];
                 const nodes = dom.qsa('[data-is-streaming], .HumanMessage, .AssistantMessage, [class*="message"]');
-                
                 nodes.forEach(node => {
                     const isHuman = node.className.includes('Human') || node.getAttribute('data-is-streaming') === 'false';
                     const role = isHuman ? 'user' : 'assistant';
-                    messages.push({
-                        role,
-                        content: dom.getCleanText(node)
-                    });
+                    messages.push({ role, content: dom.getCleanText(node) });
                 });
-
                 const titre = (dom.qs('title') || {}).textContent || 'Claude Conversation';
                 return { nomSite: 'Claude', titre, titreBrut: titre, conversation: messages };
             }
         },
-
         gemini: {
             async getConversation() {
                 const messages = [];
                 const nodes = dom.qsa('.user-query, .model-response, [class*="query"], [class*="response"]');
-                
                 nodes.forEach((node, i) => {
                     const role = node.className.includes('user') || i % 2 === 0 ? 'user' : 'assistant';
                     messages.push({ role, content: dom.getCleanText(node) });
                 });
-
                 const titre = (dom.qs('title') || {}).textContent || 'Gemini Conversation';
                 return { nomSite: 'Gemini', titre, titreBrut: titre, conversation: messages };
             }
         },
-
         generic: {
             async getConversation() {
-                // Generic fallback - tries to find any large text blocks
                 const allText = document.body.innerText;
                 const lines = allText.split('\n').filter(l => l.trim().length > 20);
-                
-                const messages = lines.slice(0, 30).map((line, i) => ({
-                    role: i % 2 === 0 ? 'user' : 'assistant',
-                    content: line.trim()
-                }));
-
-                return {
-                    nomSite: location.hostname,
-                    titre: document.title,
-                    titreBrut: document.title,
-                    conversation: messages
-                };
+                const messages = lines.slice(0, 30).map((line, i) => ({ role: i % 2 === 0 ? 'user' : 'assistant', content: line.trim() }));
+                return { nomSite: location.hostname, titre: document.title, titreBrut: document.title, conversation: messages };
             }
         }
-        // Add more platforms as needed (Perplexity, Kimi, etc. follow similar patterns)
+        // Additional platforms (perplexity, kimi, etc.) can be added similarly
     };
 
     // ==================== 6. EXPORTEUR ====================
@@ -365,37 +315,23 @@
             const platform = detectPlatform();
             const handler = platformHandlers[platform] || platformHandlers.generic;
             const data = await handler.getConversation();
-            
-            if (!data.conversation || data.conversation.length === 0) {
-                throw new Error(t('noConversation'));
-            }
+            if (!data.conversation || data.conversation.length === 0) throw new Error(t('noConversation'));
             return data;
         },
-
-        generateId() {
-            return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
-        },
-
-        nowISO() {
-            return new Date().toISOString();
-        },
-
+        generateId() { return Date.now().toString(36) + Math.random().toString(36).substr(2, 5); },
+        nowISO() { return new Date().toISOString(); },
         formatFilename(site, format, title, id) {
             const safeTitle = (title || 'conversation').replace(/[^a-z0-9]/gi, '_').toLowerCase().slice(0, 40);
             const date = new Date().toISOString().slice(0, 10);
             return `${site.toLowerCase()}_${safeTitle}_${date}_${id}.${format.toLowerCase()}`;
         },
-
         async exportMarkdown(conversation, meta, filename) {
             const content = markdown.generate(conversation, meta);
             this.downloadFile(content, filename, 'text/markdown');
         },
-
         async exportJSON(conversation, meta, filename) {
-            const content = JSON.stringify({ meta, conversation }, null, 2);
-            this.downloadFile(content, filename, 'application/json');
+            this.downloadFile(JSON.stringify({ meta, conversation }, null, 2), filename, 'application/json');
         },
-
         async exportJSONL(conversation, meta, filename) {
             let content = '';
             conversation.forEach(msg => {
@@ -403,38 +339,27 @@
             });
             this.downloadFile(content, filename, 'application/jsonl');
         },
-
         async exportShareGPT(conversation, meta, filename) {
             const sharegpt = {
                 id: meta.id,
                 title: meta.titre,
                 create_time: meta.exportedAt,
                 modify_time: meta.exportedAt,
-                conversation: conversation.map(m => ({
-                    role: m.role === 'user' ? 'human' : 'gpt',
-                    value: m.content
-                }))
+                conversation: conversation.map(m => ({ role: m.role === 'user' ? 'human' : 'gpt', value: m.content }))
             };
             this.downloadFile(JSON.stringify(sharegpt, null, 2), filename, 'application/json');
         },
-
         async exportAlpaca(conversation, meta, filename) {
-            // Alpaca format (instruction, input, output)
             const alpacaData = [];
             for (let i = 0; i < conversation.length; i += 2) {
                 const userMsg = conversation[i];
                 const assistantMsg = conversation[i + 1] || { content: '' };
                 if (userMsg && userMsg.role === 'user') {
-                    alpacaData.push({
-                        instruction: userMsg.content,
-                        input: '',
-                        output: assistantMsg.content
-                    });
+                    alpacaData.push({ instruction: userMsg.content, input: '', output: assistantMsg.content });
                 }
             }
             this.downloadFile(JSON.stringify(alpacaData, null, 2), filename, 'application/json');
         },
-
         async exportTXT(conversation, meta, filename) {
             let content = `${meta.titre}\nSource: ${meta.source}\nExported: ${meta.exportedAt}\n\n`;
             conversation.forEach(msg => {
@@ -442,7 +367,6 @@
             });
             this.downloadFile(content, filename, 'text/plain');
         },
-
         async exportCSV(conversation, meta, filename) {
             let csv = 'role,content\n';
             conversation.forEach(msg => {
@@ -451,20 +375,17 @@
             });
             this.downloadFile(csv, filename, 'text/csv');
         },
-
         async exportHTML(conversation, meta, filename) {
             let html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${meta.titre}</title>
                 <style>body{font-family:system-ui;max-width:800px;margin:40px auto;padding:20px;line-height:1.6}
                 .msg{margin-bottom:30px} .role{font-weight:bold;color:#555} .content{white-space:pre-wrap}</style></head><body>`;
             html += `<h1>${meta.titre}</h1><p><strong>Source:</strong> ${meta.source} | <strong>Date:</strong> ${meta.exportedAt}</p><hr>`;
-            
             conversation.forEach(msg => {
                 html += `<div class="msg"><div class="role">${msg.role}</div><div class="content">${msg.content.replace(/</g,'&lt;')}</div></div>`;
             });
             html += '</body></html>';
             this.downloadFile(html, filename, 'text/html');
         },
-
         downloadFile(content, filename, mime) {
             const blob = new Blob([content], { type: mime });
             const url = URL.createObjectURL(blob);
@@ -476,31 +397,21 @@
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         },
-
-        // History management using GM storage
         getHistory() {
-            try {
-                return JSON.parse(GM_getValue('ai_export_history', '[]'));
-            } catch (e) {
-                return [];
-            }
+            try { return JSON.parse(GM_getValue('ai_export_history', '[]')); } catch (e) { return []; }
         },
-
         addHistoryItem(item) {
             const history = this.getHistory();
-            history.unshift(item); // newest first
+            history.unshift(item);
             if (history.length > 50) history.pop();
-            try {
-                GM_setValue('ai_export_history', JSON.stringify(history));
-            } catch(e){}
+            try { GM_setValue('ai_export_history', JSON.stringify(history)); } catch(e){}
         },
-
         clearHistory() {
             try { GM_setValue('ai_export_history', '[]'); } catch(e){}
         }
     };
 
-    // ==================== 7. SVG BOUTON (Icône Export) ====================
+    // ==================== 7. SVG BOUTON ====================
     const createExportSVGElement = () => {
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svg.setAttribute('width', '18');
@@ -511,14 +422,13 @@
         svg.setAttribute('stroke-width', '2.25');
         svg.setAttribute('stroke-linecap', 'round');
         svg.setAttribute('stroke-linejoin', 'round');
-        
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         path.setAttribute('d', 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3');
         svg.appendChild(path);
         return svg;
     };
 
-    // ==================== 8. TOAST NOTIFICATION ====================
+    // ==================== 8. TOAST ====================
     function showToast(message, isError = false) {
         const toast = dom.createElement('div', {
             className: 'ai-export-toast',
@@ -540,31 +450,36 @@
             opacity: '0',
             transition: 'all 0.2s ease'
         });
-
         document.body.appendChild(toast);
-        
         requestAnimationFrame(() => {
             toast.style.opacity = '1';
             toast.style.bottom = '90px';
         });
-
         setTimeout(() => {
             toast.style.opacity = '0';
             setTimeout(() => toast.remove(), 200);
         }, 2800);
     }
 
-    // ==================== 9. INTERFACE - CSS (LHS Position) ====================
+    // ==================== 9. CSS ====================
     GM_addStyle(`
         .ai-export-container {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-left: 8px;
+            vertical-align: middle;
+            position: relative;  /* for menu positioning */
+            z-index: 2147483647;
+        }
+        /* fallback fixed position when not placed in header */
+        .ai-export-container.fallback {
             position: fixed;
             bottom: 20px;
             left: 20px;
-            z-index: 2147483647;
-            display: flex;
-            align-items: center;
+            margin: 0;
             gap: 8px;
-            pointer-events: auto;
+            flex-direction: row;
         }
 
         .ai-export-drag-box, .ai-export-md-btn {
@@ -575,43 +490,41 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             font-size: 14px;
             font-weight: 600;
-            padding: 10px 20px;
+            padding: 8px 16px;
             cursor: pointer;
             user-select: none;
             border: none;
             box-shadow: 0 4px 15px rgba(0,0,0,0.25);
             transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             white-space: nowrap;
-            display: flex;
+            display: inline-flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
             touch-action: none;
             letter-spacing: -.2px;
+            line-height: 1.2;
         }
 
         .ai-export-drag-box:hover, .ai-export-md-btn:hover {
-            transform: translateY(-3px) scale(1.02);
+            transform: translateY(-2px) scale(1.02);
             box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
         }
 
         .ai-export-md-btn {
             background: linear-gradient(135deg, #4ade80 0%, #16a34a 100%);
-            font-size: 13.5px;
-            padding: 10px 16px;
+            font-size: 13px;
+            padding: 8px 14px;
             font-weight: 700;
         }
-
         .ai-export-md-btn:hover {
             box-shadow: 0 10px 25px rgba(74, 222, 128, 0.4);
         }
 
         .ai-export-spinner {
-            margin-left: 6px;
+            margin-left: 4px;
             font-size: 13px;
-            opacity: 0.95;
             animation: ai-spin 1s linear infinite;
         }
-
         @keyframes ai-spin {
             from { transform: rotate(0deg); }
             to { transform: rotate(360deg); }
@@ -619,9 +532,9 @@
 
         .ai-export-menu-panel {
             position: absolute;
-            bottom: calc(100% + 12px);
+            top: calc(100% + 8px);
             left: 0;
-            min-width: 260px;
+            min-width: 230px;
             background: rgba(255,255,255,0.95);
             backdrop-filter: blur(20px);
             border-radius: 16px;
@@ -632,7 +545,6 @@
             z-index: 2147483647;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
-
         .ai-export-menu-panel.dark {
             background: rgba(30, 30, 35, 0.95);
             color: #eee;
@@ -643,7 +555,7 @@
             display: flex;
             align-items: center;
             gap: 10px;
-            padding: 10px 14px;
+            padding: 8px 12px;
             border-radius: 10px;
             cursor: pointer;
             font-size: 14px;
@@ -651,40 +563,33 @@
             color: #333;
             transition: background 0.1s ease;
         }
-
         .ai-export-menu-item:hover {
             background: rgba(102, 126, 234, 0.1);
         }
-
         .ai-export-menu-item.dark:hover {
             background: rgba(255,255,255,0.08);
         }
 
         .ai-export-menu-section {
-            padding: 6px 8px 4px;
+            padding: 4px 8px 2px;
             font-size: 11px;
             font-weight: 700;
             color: #888;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
-
-        .ai-export-toast {
-            /* styled inline in JS */
-        }
     `);
 
-    // ==================== 10. CLASSE FLOATINGBUTTON (LHS + Quick MD) ====================
+    // ==================== 10. CLASSE FLOATINGBUTTON ====================
     class FloatingButton {
         constructor() {
             this.isExporting = false;
             this.menuOpen = false;
 
-            // Main container (fixed bottom left)
+            // Container
             this.container = dom.createElement('div', { className: 'ai-export-container' });
-            document.body.appendChild(this.container);
 
-            // === Quick MD Button (Green) ===
+            // Quick MD Button
             this.mdBtn = dom.createElement('button', { 
                 className: 'ai-export-md-btn',
                 title: t('quickMD') + ' - Export current conversation as Markdown instantly'
@@ -696,66 +601,61 @@
             });
             this.container.appendChild(this.mdBtn);
 
-            // === Main Export Button (Purple) ===
+            // Main Export Button
             this.box = dom.createElement('div', { className: 'ai-export-drag-box' });
-            
             this.iconEl = createExportSVGElement();
             this.labelEl = document.createElement('span');
             this.labelEl.textContent = t('export');
             this.labelEl.style.fontWeight = '600';
-
             this.spinnerEl = document.createElement('span');
             this.spinnerEl.className = 'ai-export-spinner';
             this.spinnerEl.style.display = 'none';
             this.spinnerEl.innerHTML = '⟳';
-
             this.box.appendChild(this.iconEl);
             this.box.appendChild(this.labelEl);
             this.box.appendChild(this.spinnerEl);
 
-            // Menu panel
+            // Menu
             this.menu = dom.createElement('div', { className: 'ai-export-menu-panel' });
             this.createMenu();
             this.box.appendChild(this.menu);
-
             this.container.appendChild(this.box);
+
+            // Insert under profile or fallback to body
+            const platform = detectPlatform();
+            const profile = getProfileContainer(platform);
+            if (profile && profile.parentNode) {
+                // Insert after the profile element
+                profile.parentNode.insertBefore(this.container, profile.nextSibling);
+                // Add a small margin if needed
+                this.container.style.marginLeft = '8px';
+            } else {
+                // Fallback: fixed bottom-left
+                document.body.appendChild(this.container);
+                this.container.classList.add('fallback');
+            }
 
             this.setupEvents();
 
-            window.__floatingButton = this;
-
-            // Auto-detect dark mode for menu
+            // Dark mode detection
             if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
                 this.menu.classList.add('dark');
             }
+
+            window.__floatingButton = this;
         }
 
         async quickMDExport() {
             if (this.isExporting) return;
             this.setExporting(true, this.mdBtn);
-
             try {
                 const data = await exporter.getConversation();
                 const exportId = exporter.generateId();
                 const exportedAt = exporter.nowISO();
-                const meta = { 
-                    id: exportId, 
-                    titre: data.titreBrut || data.titre || 'Untitled', 
-                    source: data.nomSite, 
-                    exportedAt 
-                };
+                const meta = { id: exportId, titre: data.titreBrut || data.titre || 'Untitled', source: data.nomSite, exportedAt };
                 const filename = exporter.formatFilename(data.nomSite, 'md', data.titre, exportId);
-
                 await exporter.exportMarkdown(data.conversation, meta, filename);
-                exporter.addHistoryItem({ 
-                    id: exportId, 
-                    titre: meta.titre, 
-                    source: meta.source, 
-                    exportedAt, 
-                    format: 'Markdown', 
-                    filename 
-                });
-
+                exporter.addHistoryItem({ id: exportId, titre: meta.titre, source: meta.source, exportedAt, format: 'Markdown', filename });
                 showToast(`✓ ${t('exportSuccess')} (Markdown)`);
             } catch (err) {
                 showToast(`✗ ${t('exportFailed')}: ${err.message}`, true);
@@ -767,12 +667,8 @@
 
         setExporting(isExporting, targetBtn = this.box) {
             this.isExporting = isExporting;
-            const spinner = targetBtn === this.mdBtn ? null : this.spinnerEl; // only main has spinner for now
-
-            if (spinner) {
-                spinner.style.display = isExporting ? 'inline' : 'none';
-            }
-            
+            const spinner = targetBtn === this.mdBtn ? null : this.spinnerEl;
+            if (spinner) spinner.style.display = isExporting ? 'inline' : 'none';
             if (targetBtn) {
                 targetBtn.style.opacity = isExporting ? '0.7' : '1';
                 targetBtn.style.pointerEvents = isExporting ? 'none' : 'auto';
@@ -790,14 +686,9 @@
             const menu = this.menu;
             menu.innerHTML = '';
 
-            // Header
-            const header = dom.createElement('div', {
-                className: 'ai-export-menu-section',
-                textContent: t('export')
-            });
+            const header = dom.createElement('div', { className: 'ai-export-menu-section', textContent: t('export') });
             menu.appendChild(header);
 
-            // Format buttons
             const formats = [
                 { key: 'markdown', label: t('markdown'), icon: '📝', fn: 'exportMarkdown' },
                 { key: 'json', label: t('json'), icon: '📦', fn: 'exportJSON' },
@@ -810,34 +701,22 @@
             ];
 
             formats.forEach(fmt => {
-                const item = dom.createElement('div', {
-                    className: 'ai-export-menu-item'
-                });
+                const item = dom.createElement('div', { className: 'ai-export-menu-item' });
                 item.innerHTML = `${fmt.icon} <span>${fmt.label}</span>`;
-                
                 item.addEventListener('click', async (e) => {
                     e.stopImmediatePropagation();
                     menu.style.display = 'none';
                     this.menuOpen = false;
-
                     if (this.isExporting) return;
                     this.setExporting(true);
-
                     try {
                         const data = await exporter.getConversation();
                         const exportId = exporter.generateId();
                         const exportedAt = exporter.nowISO();
-                        const meta = { 
-                            id: exportId, 
-                            titre: data.titreBrut || 'Untitled Conversation', 
-                            source: data.nomSite, 
-                            exportedAt 
-                        };
+                        const meta = { id: exportId, titre: data.titreBrut || 'Untitled Conversation', source: data.nomSite, exportedAt };
                         const filename = exporter.formatFilename(data.nomSite, fmt.key === 'markdown' ? 'md' : fmt.key, data.titre, exportId);
-
                         await exporter[fmt.fn](data.conversation, meta, filename);
                         exporter.addHistoryItem({ id: exportId, titre: meta.titre, source: meta.source, exportedAt, format: fmt.label, filename });
-
                         showToast(`✓ ${t('exportSuccess')} (${fmt.label})`);
                     } catch (err) {
                         showToast(`✗ ${t('exportFailed')}: ${err.message}`, true);
@@ -846,7 +725,6 @@
                         this.setExporting(false);
                     }
                 });
-
                 menu.appendChild(item);
             });
 
@@ -854,16 +732,10 @@
             const divider = dom.createElement('div', { style: { height: '1px', background: 'rgba(0,0,0,0.1)', margin: '8px 0' } });
             menu.appendChild(divider);
 
-            // History
-            const histHeader = dom.createElement('div', {
-                className: 'ai-export-menu-section',
-                textContent: t('history')
-            });
+            const histHeader = dom.createElement('div', { className: 'ai-export-menu-section', textContent: t('history') });
             menu.appendChild(histHeader);
 
-            const historyBtn = dom.createElement('div', {
-                className: 'ai-export-menu-item'
-            });
+            const historyBtn = dom.createElement('div', { className: 'ai-export-menu-item' });
             historyBtn.innerHTML = `🕒 <span>${t('history')}</span>`;
             historyBtn.addEventListener('click', () => {
                 menu.style.display = 'none';
@@ -871,10 +743,7 @@
             });
             menu.appendChild(historyBtn);
 
-            // Language quick switch
-            const langItem = dom.createElement('div', {
-                className: 'ai-export-menu-item'
-            });
+            const langItem = dom.createElement('div', { className: 'ai-export-menu-item' });
             langItem.innerHTML = `🌍 <span>${t('language')}</span>`;
             langItem.addEventListener('click', () => {
                 const newLang = currentLang === 'en' ? 'fr' : 'en';
@@ -884,11 +753,7 @@
             });
             menu.appendChild(langItem);
 
-            // Clear history
-            const clearBtn = dom.createElement('div', {
-                className: 'ai-export-menu-item',
-                style: { color: '#ef4444', fontSize: '13px' }
-            });
+            const clearBtn = dom.createElement('div', { className: 'ai-export-menu-item', style: { color: '#ef4444', fontSize: '13px' } });
             clearBtn.innerHTML = `🗑️ <span>${t('clearHistory')}</span>`;
             clearBtn.addEventListener('click', () => {
                 if (confirm('Clear all export history?')) {
@@ -949,17 +814,13 @@
             modal.appendChild(content);
             document.body.appendChild(modal);
 
-            // Close handlers
             modal.addEventListener('click', (e) => {
                 if (e.target === modal) modal.remove();
             });
             content.querySelector('#close-hist').addEventListener('click', () => modal.remove());
 
-            // Download buttons
             content.querySelectorAll('.hist-dl').forEach(btn => {
                 btn.addEventListener('click', () => {
-                    // In real implementation we would re-generate or store the file content.
-                    // For simplicity we show a message.
                     showToast('Re-downloading original file... (feature stores metadata only)');
                     modal.remove();
                 });
@@ -967,16 +828,13 @@
         }
 
         setupEvents() {
-            // Toggle menu on main button click
             const toggleMenu = (e) => {
                 if (e.target.closest('.ai-export-menu-panel')) return;
                 this.menuOpen = !this.menuOpen;
                 this.menu.style.display = this.menuOpen ? 'block' : 'none';
             };
-
             this.box.addEventListener('click', toggleMenu);
 
-            // Close menu when clicking outside
             document.addEventListener('click', (e) => {
                 if (!this.container.contains(e.target)) {
                     this.menu.style.display = 'none';
@@ -984,7 +842,6 @@
                 }
             });
 
-            // Keyboard support (Escape closes menu)
             document.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape' && this.menuOpen) {
                     this.menu.style.display = 'none';
@@ -996,14 +853,12 @@
 
     // ==================== 11. INITIALISATION ====================
     function initialize() {
-        // Only initialize once
         if (window.__aiExportInitialized) return;
         window.__aiExportInitialized = true;
 
-        // Small delay to ensure page is fully loaded
         setTimeout(() => {
             new FloatingButton();
-            console.log('%c[Finetune Exporter] LHS v2 initialized successfully on ' + detectPlatform(), 'color:#667eea');
+            console.log('%c[Finetune Exporter] v3 (profile‑integrated) initialized on ' + detectPlatform(), 'color:#667eea');
         }, 800);
     }
 
@@ -1012,5 +867,4 @@
     } else {
         initialize();
     }
-
 })();
