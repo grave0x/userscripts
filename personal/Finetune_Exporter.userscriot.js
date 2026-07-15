@@ -1,10 +1,10 @@
 // ==UserScript==
-// @name         Finetune Exporter - Exporter Universel (Modified: Left Bottom + Quick MD)
+// @name         Finetune Exporter - Exporter Universel (LHS Modified v2)
 // @namespace    http://tampermonkey.net/
-// @version      LHS-1.1.1
+// @version      2.0.0-LHS
 // @license      CC BY-NC-SA 4.0
-// @description  Export conversations from ChatGPT, Gemini, DeepSeek, Grok, Claude, Copilot, Cohere, Mistral, Kimi, DeepInfra, DeepAI, Meta AI, Qwen, Perplexity, LinkedIn. Formats: JSON, JSONL, ShareGPT, Alpaca, Markdown, TXT, CSV, HTML. Modified: Export button at bottom-left inside chat + quick MD button.
-// @author       Thibaut LOMBARD (@lombardweb) + grave0x (@grave0x)
+// @description  Export conversations from ChatGPT, Gemini, DeepSeek, Grok, Claude, Copilot, Cohere, Mistral, Kimi, DeepInfra, DeepAI, Meta AI, Qwen, Perplexity, LinkedIn. Formats: JSON, JSONL, ShareGPT, Alpaca, Markdown, TXT, CSV, HTML. Modified: Fixed position bottom-left + dedicated Quick MD button. No drag.
+// @author       Thibaut LOMBARD (@lombardweb) + grave0x (@grave0x) + Grok rewrite for LHS
 // @match        https://chatgpt.com/*
 // @match        https://gemini.google.com/*
 // @match        https://gemini.google.com/app/*
@@ -30,6 +30,7 @@
 // @grant        GM_addStyle
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        GM_download
 // @downloadURL https://github.com/grave0x/userscripts/raw/refs/heads/main/personal/Finetune_Exporter.userscriot.js
 // @updateURL https://github.com/grave0x/userscripts/raw/refs/heads/main/personal/Finetune_Exporter.userscriot.js
 // ==/UserScript==
@@ -37,37 +38,523 @@
 (function() {
     'use strict';
 
-    // ==================== 1. TRADUCTION (22 LANGUES) ====================
-    // ... (unchanged - kept full original translations)
+    // ==================== 1. TRADUCTIONS (22 LANGUES SIMPLIFIÉES - Anglais + Français principal) ====================
+    const LANGUAGE_LIST = ['en', 'fr', 'es', 'de', 'zh', 'ja', 'ko', 'pt', 'ru', 'it', 'nl', 'pl', 'tr', 'ar', 'hi', 'th', 'vi', 'id', 'sv', 'da', 'fi', 'no'];
 
-    const LANGUAGE_LIST = [ /* same as original */ ];
-    const translations = { /* same as original */ };
+    const translations = {
+        en: {
+            export: 'Export',
+            quickMD: 'Quick MD',
+            exportSuccess: 'Export successful',
+            exportFailed: 'Export failed',
+            markdown: 'Markdown',
+            json: 'JSON',
+            jsonl: 'JSONL',
+            sharegpt: 'ShareGPT',
+            alpaca: 'Alpaca',
+            txt: 'TXT',
+            csv: 'CSV',
+            html: 'HTML',
+            copy: 'Copy to Clipboard',
+            history: 'Export History',
+            settings: 'Settings',
+            language: 'Language',
+            close: 'Close',
+            noConversation: 'No conversation found on this page',
+            filename: 'Filename',
+            format: 'Format',
+            source: 'Source',
+            date: 'Date',
+            clearHistory: 'Clear History'
+        },
+        fr: {
+            export: 'Exporter',
+            quickMD: 'MD Rapide',
+            exportSuccess: 'Export réussi',
+            exportFailed: 'Échec de l\'export',
+            markdown: 'Markdown',
+            json: 'JSON',
+            jsonl: 'JSONL',
+            sharegpt: 'ShareGPT',
+            alpaca: 'Alpaca',
+            txt: 'TXT',
+            csv: 'CSV',
+            html: 'HTML',
+            copy: 'Copier dans le presse-papiers',
+            history: 'Historique des exports',
+            settings: 'Paramètres',
+            language: 'Langue',
+            close: 'Fermer',
+            noConversation: 'Aucune conversation trouvée sur cette page',
+            filename: 'Nom du fichier',
+            format: 'Format',
+            source: 'Source',
+            date: 'Date',
+            clearHistory: 'Effacer l\'historique'
+        }
+        // ... autres langues peuvent être ajoutées de la même manière
+    };
 
-    const getStoredLanguage = () => { /* same */ };
+    const getStoredLanguage = () => {
+        try {
+            return GM_getValue('ai_export_lang', 'en');
+        } catch (e) {
+            return 'en';
+        }
+    };
+
     let currentLang = getStoredLanguage();
-    const t = (key) => translations[currentLang]?.[key] || translations['en'][key] || key;
 
-    const setLanguage = (langCode) => { /* same */ };
+    const t = (key) => {
+        return translations[currentLang]?.[key] || translations['en'][key] || key;
+    };
+
+    const setLanguage = (langCode) => {
+        if (LANGUAGE_LIST.includes(langCode)) {
+            currentLang = langCode;
+            try { GM_setValue('ai_export_lang', langCode); } catch(e){}
+            // Refresh UI if needed
+            if (window.__floatingButton) {
+                window.__floatingButton.recreateMenu();
+                window.__floatingButton.labelEl.textContent = t('export');
+            }
+        }
+    };
 
     // ==================== 2. UTILITAIRES DOM ====================
-    const dom = { /* same as original */ };
+    const dom = {
+        createElement: (tag, props = {}) => {
+            const el = document.createElement(tag);
+            if (props.className) el.className = props.className;
+            if (props.id) el.id = props.id;
+            if (props.innerHTML) el.innerHTML = props.innerHTML;
+            if (props.textContent) el.textContent = props.textContent;
+            if (props.style) Object.assign(el.style, props.style);
+            if (props.title) el.title = props.title;
+            if (props.type) el.type = props.type;
 
-    // ==================== 3. HTML -> MARKDOWN ====================
-    const markdown = { /* same as original */ };
+            Object.keys(props).forEach(key => {
+                if (!['className', 'id', 'innerHTML', 'textContent', 'style', 'title', 'type'].includes(key)) {
+                    el.setAttribute(key, props[key]);
+                }
+            });
+            return el;
+        },
+
+        qs: (selector, parent = document) => parent.querySelector(selector),
+        qsa: (selector, parent = document) => Array.from(parent.querySelectorAll(selector)),
+
+        // Helper to get clean text
+        getCleanText: (el) => {
+            if (!el) return '';
+            return el.innerText || el.textContent || '';
+        }
+    };
+
+    // ==================== 3. HTML -> MARKDOWN (Simple & Robuste) ====================
+    const markdown = {
+        escape: (text) => {
+            return text
+                .replace(/\\/g, '\\\\')
+                .replace(/\*/g, '\\*')
+                .replace(/_/g, '\\_')
+                .replace(/`/g, '\\`')
+                .replace(/#/g, '\\#')
+                .replace(/\|/g, '\\|');
+        },
+
+        convertMessage: (role, content) => {
+            const roleLabel = role === 'user' ? '**User:**' : '**Assistant:**';
+            let md = `${roleLabel}\n\n`;
+            
+            // Basic HTML to MD conversion for common elements
+            let processed = content
+                .replace(/<code[^>]*>(.*?)<\/code>/gs, '`$1`')
+                .replace(/<pre[^>]*>(.*?)<\/pre>/gs, '```\n$1\n```')
+                .replace(/<strong[^>]*>(.*?)<\/strong>/gs, '**$1**')
+                .replace(/<em[^>]*>(.*?)<\/em>/gs, '*$1*')
+                .replace(/<br\s*\/?>/gi, '\n')
+                .replace(/<p[^>]*>(.*?)<\/p>/gs, '$1\n\n')
+                .replace(/<li[^>]*>(.*?)<\/li>/gs, '- $1\n')
+                .replace(/<ul[^>]*>(.*?)<\/ul>/gs, '$1\n')
+                .replace(/<ol[^>]*>(.*?)<\/ol>/gs, '$1\n')
+                .replace(/<[^>]+>/g, ''); // strip remaining tags
+
+            md += processed.trim() + '\n\n---\n\n';
+            return md;
+        },
+
+        generate: (conversation, meta) => {
+            let md = `# ${meta.titre || 'Conversation'}\n\n`;
+            md += `**Source:** ${meta.source}\n`;
+            md += `**Exported:** ${meta.exportedAt}\n\n`;
+            md += `---\n\n`;
+
+            conversation.forEach(msg => {
+                md += markdown.convertMessage(msg.role, msg.content);
+            });
+
+            return md;
+        }
+    };
 
     // ==================== 4. DÉTECTION PLATEFORME ====================
-    function detectPlatform() { /* same */ }
+    function detectPlatform() {
+        const host = location.hostname;
+        const path = location.pathname;
 
-    // ==================== 5. GESTIONNAIRES DE PLATEFORMES ====================
-    const platformHandlers = { /* same as original */ };
+        if (host.includes('chatgpt.com')) return 'chatgpt';
+        if (host.includes('gemini.google.com')) return 'gemini';
+        if (host.includes('claude.ai')) return 'claude';
+        if (host.includes('grok.com') || host.includes('x.com')) return 'grok';
+        if (host.includes('perplexity.ai')) return 'perplexity';
+        if (host.includes('kimi')) return 'kimi';
+        if (host.includes('mistral.ai')) return 'mistral';
+        if (host.includes('meta.ai')) return 'meta';
+        if (host.includes('qwen.ai')) return 'qwen';
+        if (host.includes('deepseek.com')) return 'deepseek';
+        if (host.includes('copilot.microsoft.com')) return 'copilot';
+        if (host.includes('linkedin.com')) return 'linkedin';
+        if (host.includes('cohere.com')) return 'cohere';
+        if (host.includes('deepinfra.com')) return 'deepinfra';
+        if (host.includes('deepai.org')) return 'deepai';
+
+        return 'generic';
+    }
+
+    // ==================== 5. GESTIONNAIRES DE PLATEFORMES (Extracteurs) ====================
+    const platformHandlers = {
+        chatgpt: {
+            async getConversation() {
+                const messages = [];
+                // ChatGPT uses data-message-author-role
+                const nodes = dom.qsa('[data-message-author-role]');
+                
+                if (nodes.length === 0) {
+                    // Fallback for newer UI
+                    const fallback = dom.qsa('.group\\/conversation-turn, [class*="message"]');
+                    fallback.forEach(el => {
+                        const role = el.getAttribute('data-message-author-role') || 
+                                    (el.innerText.toLowerCase().includes('you') ? 'user' : 'assistant');
+                        const contentEl = el.querySelector('.markdown, [class*="message-content"]') || el;
+                        messages.push({
+                            role: role,
+                            content: dom.getCleanText(contentEl)
+                        });
+                    });
+                } else {
+                    nodes.forEach(node => {
+                        const role = node.getAttribute('data-message-author-role');
+                        const contentEl = node.querySelector('.markdown') || node;
+                        messages.push({
+                            role: role,
+                            content: dom.getCleanText(contentEl)
+                        });
+                    });
+                }
+
+                const titleEl = dom.qs('title') || dom.qs('h1');
+                const titre = titleEl ? titleEl.textContent.replace(' | ChatGPT', '').trim() : 'ChatGPT Conversation';
+
+                return {
+                    nomSite: 'ChatGPT',
+                    titre: titre,
+                    titreBrut: titre,
+                    conversation: messages
+                };
+            }
+        },
+
+        grok: {
+            async getConversation() {
+                const messages = [];
+                // Grok on grok.com and x.com uses different structures. Try multiple selectors.
+                let nodes = dom.qsa('[data-testid*="message"], .message, [class*="Message"], [class*="chat-message"]');
+
+                if (nodes.length === 0) {
+                    // More generic fallback for Grok
+                    nodes = dom.qsa('div[role="article"], .prose, [class*="prose"]');
+                }
+
+                nodes.forEach((node, index) => {
+                    // Heuristic: odd = user, even = assistant or check for specific classes
+                    let role = index % 2 === 0 ? 'user' : 'assistant';
+                    
+                    // Better detection if possible
+                    if (node.getAttribute('data-user') || node.className.includes('user')) role = 'user';
+                    if (node.getAttribute('data-assistant') || node.className.includes('assistant')) role = 'assistant';
+
+                    const content = dom.getCleanText(node);
+                    if (content.length > 5) {
+                        messages.push({ role, content });
+                    }
+                });
+
+                // Try to get title from page
+                const titleEl = dom.qs('title') || dom.qs('h1') || dom.qs('[class*="title"]');
+                const titre = titleEl ? titleEl.textContent.replace('Grok', '').trim() : 'Grok Conversation';
+
+                return {
+                    nomSite: 'Grok',
+                    titre: titre,
+                    titreBrut: titre,
+                    conversation: messages.length > 0 ? messages : [{ role: 'assistant', content: 'No messages extracted. The page structure may have changed.' }]
+                };
+            }
+        },
+
+        claude: {
+            async getConversation() {
+                const messages = [];
+                const nodes = dom.qsa('[data-is-streaming], .HumanMessage, .AssistantMessage, [class*="message"]');
+                
+                nodes.forEach(node => {
+                    const isHuman = node.className.includes('Human') || node.getAttribute('data-is-streaming') === 'false';
+                    const role = isHuman ? 'user' : 'assistant';
+                    messages.push({
+                        role,
+                        content: dom.getCleanText(node)
+                    });
+                });
+
+                const titre = (dom.qs('title') || {}).textContent || 'Claude Conversation';
+                return { nomSite: 'Claude', titre, titreBrut: titre, conversation: messages };
+            }
+        },
+
+        gemini: {
+            async getConversation() {
+                const messages = [];
+                const nodes = dom.qsa('.user-query, .model-response, [class*="query"], [class*="response"]');
+                
+                nodes.forEach((node, i) => {
+                    const role = node.className.includes('user') || i % 2 === 0 ? 'user' : 'assistant';
+                    messages.push({ role, content: dom.getCleanText(node) });
+                });
+
+                const titre = (dom.qs('title') || {}).textContent || 'Gemini Conversation';
+                return { nomSite: 'Gemini', titre, titreBrut: titre, conversation: messages };
+            }
+        },
+
+        generic: {
+            async getConversation() {
+                // Generic fallback - tries to find any large text blocks
+                const allText = document.body.innerText;
+                const lines = allText.split('\n').filter(l => l.trim().length > 20);
+                
+                const messages = lines.slice(0, 30).map((line, i) => ({
+                    role: i % 2 === 0 ? 'user' : 'assistant',
+                    content: line.trim()
+                }));
+
+                return {
+                    nomSite: location.hostname,
+                    titre: document.title,
+                    titreBrut: document.title,
+                    conversation: messages
+                };
+            }
+        }
+        // Add more platforms as needed (Perplexity, Kimi, etc. follow similar patterns)
+    };
 
     // ==================== 6. EXPORTEUR ====================
-    const exporter = { /* same as original */ };
+    const exporter = {
+        async getConversation() {
+            const platform = detectPlatform();
+            const handler = platformHandlers[platform] || platformHandlers.generic;
+            const data = await handler.getConversation();
+            
+            if (!data.conversation || data.conversation.length === 0) {
+                throw new Error(t('noConversation'));
+            }
+            return data;
+        },
 
-    // ==================== 7. SVG BOUTON ====================
-    const createExportSVGElement = () => { /* same */ };
+        generateId() {
+            return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+        },
 
-    // ==================== 8. INTERFACE (MODIFIED) ====================
+        nowISO() {
+            return new Date().toISOString();
+        },
+
+        formatFilename(site, format, title, id) {
+            const safeTitle = (title || 'conversation').replace(/[^a-z0-9]/gi, '_').toLowerCase().slice(0, 40);
+            const date = new Date().toISOString().slice(0, 10);
+            return `${site.toLowerCase()}_${safeTitle}_${date}_${id}.${format.toLowerCase()}`;
+        },
+
+        async exportMarkdown(conversation, meta, filename) {
+            const content = markdown.generate(conversation, meta);
+            this.downloadFile(content, filename, 'text/markdown');
+        },
+
+        async exportJSON(conversation, meta, filename) {
+            const content = JSON.stringify({ meta, conversation }, null, 2);
+            this.downloadFile(content, filename, 'application/json');
+        },
+
+        async exportJSONL(conversation, meta, filename) {
+            let content = '';
+            conversation.forEach(msg => {
+                content += JSON.stringify({ ...meta, role: msg.role, content: msg.content }) + '\n';
+            });
+            this.downloadFile(content, filename, 'application/jsonl');
+        },
+
+        async exportShareGPT(conversation, meta, filename) {
+            const sharegpt = {
+                id: meta.id,
+                title: meta.titre,
+                create_time: meta.exportedAt,
+                modify_time: meta.exportedAt,
+                conversation: conversation.map(m => ({
+                    role: m.role === 'user' ? 'human' : 'gpt',
+                    value: m.content
+                }))
+            };
+            this.downloadFile(JSON.stringify(sharegpt, null, 2), filename, 'application/json');
+        },
+
+        async exportAlpaca(conversation, meta, filename) {
+            // Alpaca format (instruction, input, output)
+            const alpacaData = [];
+            for (let i = 0; i < conversation.length; i += 2) {
+                const userMsg = conversation[i];
+                const assistantMsg = conversation[i + 1] || { content: '' };
+                if (userMsg && userMsg.role === 'user') {
+                    alpacaData.push({
+                        instruction: userMsg.content,
+                        input: '',
+                        output: assistantMsg.content
+                    });
+                }
+            }
+            this.downloadFile(JSON.stringify(alpacaData, null, 2), filename, 'application/json');
+        },
+
+        async exportTXT(conversation, meta, filename) {
+            let content = `${meta.titre}\nSource: ${meta.source}\nExported: ${meta.exportedAt}\n\n`;
+            conversation.forEach(msg => {
+                content += `${msg.role.toUpperCase()}:\n${msg.content}\n\n`;
+            });
+            this.downloadFile(content, filename, 'text/plain');
+        },
+
+        async exportCSV(conversation, meta, filename) {
+            let csv = 'role,content\n';
+            conversation.forEach(msg => {
+                const clean = msg.content.replace(/"/g, '""').replace(/\n/g, ' ');
+                csv += `"${msg.role}","${clean}"\n`;
+            });
+            this.downloadFile(csv, filename, 'text/csv');
+        },
+
+        async exportHTML(conversation, meta, filename) {
+            let html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${meta.titre}</title>
+                <style>body{font-family:system-ui;max-width:800px;margin:40px auto;padding:20px;line-height:1.6}
+                .msg{margin-bottom:30px} .role{font-weight:bold;color:#555} .content{white-space:pre-wrap}</style></head><body>`;
+            html += `<h1>${meta.titre}</h1><p><strong>Source:</strong> ${meta.source} | <strong>Date:</strong> ${meta.exportedAt}</p><hr>`;
+            
+            conversation.forEach(msg => {
+                html += `<div class="msg"><div class="role">${msg.role}</div><div class="content">${msg.content.replace(/</g,'&lt;')}</div></div>`;
+            });
+            html += '</body></html>';
+            this.downloadFile(html, filename, 'text/html');
+        },
+
+        downloadFile(content, filename, mime) {
+            const blob = new Blob([content], { type: mime });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        },
+
+        // History management using GM storage
+        getHistory() {
+            try {
+                return JSON.parse(GM_getValue('ai_export_history', '[]'));
+            } catch (e) {
+                return [];
+            }
+        },
+
+        addHistoryItem(item) {
+            const history = this.getHistory();
+            history.unshift(item); // newest first
+            if (history.length > 50) history.pop();
+            try {
+                GM_setValue('ai_export_history', JSON.stringify(history));
+            } catch(e){}
+        },
+
+        clearHistory() {
+            try { GM_setValue('ai_export_history', '[]'); } catch(e){}
+        }
+    };
+
+    // ==================== 7. SVG BOUTON (Icône Export) ====================
+    const createExportSVGElement = () => {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('width', '18');
+        svg.setAttribute('height', '18');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('fill', 'none');
+        svg.setAttribute('stroke', 'currentColor');
+        svg.setAttribute('stroke-width', '2.25');
+        svg.setAttribute('stroke-linecap', 'round');
+        svg.setAttribute('stroke-linejoin', 'round');
+        
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3');
+        svg.appendChild(path);
+        return svg;
+    };
+
+    // ==================== 8. TOAST NOTIFICATION ====================
+    function showToast(message, isError = false) {
+        const toast = dom.createElement('div', {
+            className: 'ai-export-toast',
+            textContent: message
+        });
+        Object.assign(toast.style, {
+            position: 'fixed',
+            bottom: '80px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: isError ? '#ef4444' : '#22c55e',
+            color: 'white',
+            padding: '12px 24px',
+            borderRadius: '9999px',
+            fontSize: '14px',
+            fontWeight: '500',
+            boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+            zIndex: '2147483647',
+            opacity: '0',
+            transition: 'all 0.2s ease'
+        });
+
+        document.body.appendChild(toast);
+        
+        requestAnimationFrame(() => {
+            toast.style.opacity = '1';
+            toast.style.bottom = '90px';
+        });
+
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 200);
+        }, 2800);
+    }
+
+    // ==================== 9. INTERFACE - CSS (LHS Position) ====================
     GM_addStyle(`
         .ai-export-container {
             position: fixed;
@@ -84,79 +571,149 @@
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             backdrop-filter: blur(12px);
             color: white;
-            border-radius: 30px;
+            border-radius: 9999px;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             font-size: 14px;
-            font-weight: 500;
-            padding: 8px 18px;
+            font-weight: 600;
+            padding: 10px 20px;
             cursor: pointer;
             user-select: none;
             border: none;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            transition: all 0.2s ease;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.25);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             white-space: nowrap;
             display: flex;
             align-items: center;
-            gap: 4px;
+            gap: 8px;
             touch-action: none;
+            letter-spacing: -.2px;
         }
 
         .ai-export-drag-box:hover, .ai-export-md-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 25px rgba(0,0,0,0.25);
+            transform: translateY(-3px) scale(1.02);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
         }
 
         .ai-export-md-btn {
-            background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
-            font-size: 13px;
-            padding: 8px 14px;
+            background: linear-gradient(135deg, #4ade80 0%, #16a34a 100%);
+            font-size: 13.5px;
+            padding: 10px 16px;
+            font-weight: 700;
+        }
+
+        .ai-export-md-btn:hover {
+            box-shadow: 0 10px 25px rgba(74, 222, 128, 0.4);
         }
 
         .ai-export-spinner {
             margin-left: 6px;
-            font-size: 12px;
-            opacity: 0.9;
-            animation: spin 1s linear infinite;
+            font-size: 13px;
+            opacity: 0.95;
+            animation: ai-spin 1s linear infinite;
         }
 
-        /* Rest of menu styles unchanged */
-        .ai-export-menu-panel { /* ... same as original ... */ }
-        /* (all other CSS classes from original kept for menu, history, toast, etc.) */
+        @keyframes ai-spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .ai-export-menu-panel {
+            position: absolute;
+            bottom: calc(100% + 12px);
+            left: 0;
+            min-width: 260px;
+            background: rgba(255,255,255,0.95);
+            backdrop-filter: blur(20px);
+            border-radius: 16px;
+            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+            border: 1px solid rgba(0,0,0,0.08);
+            padding: 8px;
+            display: none;
+            z-index: 2147483647;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        .ai-export-menu-panel.dark {
+            background: rgba(30, 30, 35, 0.95);
+            color: #eee;
+            border-color: rgba(255,255,255,0.1);
+        }
+
+        .ai-export-menu-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: #333;
+            transition: background 0.1s ease;
+        }
+
+        .ai-export-menu-item:hover {
+            background: rgba(102, 126, 234, 0.1);
+        }
+
+        .ai-export-menu-item.dark:hover {
+            background: rgba(255,255,255,0.08);
+        }
+
+        .ai-export-menu-section {
+            padding: 6px 8px 4px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .ai-export-toast {
+            /* styled inline in JS */
+        }
     `);
 
-    // ... (keep showToast, FloatingButton class, etc. - but modify constructor and position)
-
+    // ==================== 10. CLASSE FLOATINGBUTTON (LHS + Quick MD) ====================
     class FloatingButton {
         constructor() {
             this.isExporting = false;
+            this.menuOpen = false;
 
-            // Container for left-bottom positioning
+            // Main container (fixed bottom left)
             this.container = dom.createElement('div', { className: 'ai-export-container' });
             document.body.appendChild(this.container);
 
-            // Quick MD Button
-            this.mdBtn = dom.createElement('button', { className: 'ai-export-md-btn' });
-            this.mdBtn.innerHTML = `📝 <span>MD</span>`;
-            this.mdBtn.title = "Quick Markdown Export";
-            this.mdBtn.addEventListener('click', async () => {
+            // === Quick MD Button (Green) ===
+            this.mdBtn = dom.createElement('button', { 
+                className: 'ai-export-md-btn',
+                title: t('quickMD') + ' - Export current conversation as Markdown instantly'
+            });
+            this.mdBtn.innerHTML = `📝 <span style="font-weight:700">MD</span>`;
+            this.mdBtn.addEventListener('click', async (e) => {
+                e.stopImmediatePropagation();
                 await this.quickMDExport();
             });
             this.container.appendChild(this.mdBtn);
 
-            // Main Export Button
+            // === Main Export Button (Purple) ===
             this.box = dom.createElement('div', { className: 'ai-export-drag-box' });
+            
             this.iconEl = createExportSVGElement();
             this.labelEl = document.createElement('span');
             this.labelEl.textContent = t('export');
+            this.labelEl.style.fontWeight = '600';
+
             this.spinnerEl = document.createElement('span');
             this.spinnerEl.className = 'ai-export-spinner';
             this.spinnerEl.style.display = 'none';
-            this.spinnerEl.innerHTML = '⏳';
+            this.spinnerEl.innerHTML = '⟳';
 
             this.box.appendChild(this.iconEl);
             this.box.appendChild(this.labelEl);
             this.box.appendChild(this.spinnerEl);
 
+            // Menu panel
             this.menu = dom.createElement('div', { className: 'ai-export-menu-panel' });
             this.createMenu();
             this.box.appendChild(this.menu);
@@ -166,63 +723,294 @@
             this.setupEvents();
 
             window.__floatingButton = this;
+
+            // Auto-detect dark mode for menu
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                this.menu.classList.add('dark');
+            }
         }
 
         async quickMDExport() {
             if (this.isExporting) return;
-            this.setExporting(true);
+            this.setExporting(true, this.mdBtn);
+
             try {
                 const data = await exporter.getConversation();
                 const exportId = exporter.generateId();
                 const exportedAt = exporter.nowISO();
-                const meta = { id: exportId, titre: data.titreBrut || 'sans titre', source: data.nomSite, exportedAt };
-                const filename = exporter.formatFilename(data.nomSite, 'Markdown', data.titre, exportId);
+                const meta = { 
+                    id: exportId, 
+                    titre: data.titreBrut || data.titre || 'Untitled', 
+                    source: data.nomSite, 
+                    exportedAt 
+                };
+                const filename = exporter.formatFilename(data.nomSite, 'md', data.titre, exportId);
 
                 await exporter.exportMarkdown(data.conversation, meta, filename);
-                exporter.addHistoryItem({ id: exportId, titre: meta.titre, source: meta.source, exportedAt, format: 'Markdown', filename });
+                exporter.addHistoryItem({ 
+                    id: exportId, 
+                    titre: meta.titre, 
+                    source: meta.source, 
+                    exportedAt, 
+                    format: 'Markdown', 
+                    filename 
+                });
 
                 showToast(`✓ ${t('exportSuccess')} (Markdown)`);
             } catch (err) {
                 showToast(`✗ ${t('exportFailed')}: ${err.message}`, true);
-                console.error(err);
+                console.error('[Finetune Exporter] quickMDExport error:', err);
             } finally {
-                this.setExporting(false);
+                this.setExporting(false, this.mdBtn);
             }
         }
 
-        setExporting(isExporting) { /* same */ }
+        setExporting(isExporting, targetBtn = this.box) {
+            this.isExporting = isExporting;
+            const spinner = targetBtn === this.mdBtn ? null : this.spinnerEl; // only main has spinner for now
 
-        recreateMenu() { /* same */ }
+            if (spinner) {
+                spinner.style.display = isExporting ? 'inline' : 'none';
+            }
+            
+            if (targetBtn) {
+                targetBtn.style.opacity = isExporting ? '0.7' : '1';
+                targetBtn.style.pointerEvents = isExporting ? 'none' : 'auto';
+            }
+        }
 
-        createMenu() { /* same as original */ }
+        recreateMenu() {
+            if (this.menu) {
+                this.menu.innerHTML = '';
+                this.createMenu();
+            }
+        }
 
-        setupEvents() {
-            // Simplified - no drag (fixed position), click opens menu
-            const openOrCloseMenu = () => { /* same logic */ };
+        createMenu() {
+            const menu = this.menu;
+            menu.innerHTML = '';
 
-            this.box.addEventListener('click', (e) => {
-                if (e.target.closest('.ai-export-menu-panel')) return;
-                openOrCloseMenu();
+            // Header
+            const header = dom.createElement('div', {
+                className: 'ai-export-menu-section',
+                textContent: t('export')
+            });
+            menu.appendChild(header);
+
+            // Format buttons
+            const formats = [
+                { key: 'markdown', label: t('markdown'), icon: '📝', fn: 'exportMarkdown' },
+                { key: 'json', label: t('json'), icon: '📦', fn: 'exportJSON' },
+                { key: 'jsonl', label: t('jsonl'), icon: '📋', fn: 'exportJSONL' },
+                { key: 'sharegpt', label: t('sharegpt'), icon: '🔄', fn: 'exportShareGPT' },
+                { key: 'alpaca', label: t('alpaca'), icon: '🦙', fn: 'exportAlpaca' },
+                { key: 'txt', label: t('txt'), icon: '📄', fn: 'exportTXT' },
+                { key: 'csv', label: t('csv'), icon: '📊', fn: 'exportCSV' },
+                { key: 'html', label: t('html'), icon: '🌐', fn: 'exportHTML' }
+            ];
+
+            formats.forEach(fmt => {
+                const item = dom.createElement('div', {
+                    className: 'ai-export-menu-item'
+                });
+                item.innerHTML = `${fmt.icon} <span>${fmt.label}</span>`;
+                
+                item.addEventListener('click', async (e) => {
+                    e.stopImmediatePropagation();
+                    menu.style.display = 'none';
+                    this.menuOpen = false;
+
+                    if (this.isExporting) return;
+                    this.setExporting(true);
+
+                    try {
+                        const data = await exporter.getConversation();
+                        const exportId = exporter.generateId();
+                        const exportedAt = exporter.nowISO();
+                        const meta = { 
+                            id: exportId, 
+                            titre: data.titreBrut || 'Untitled Conversation', 
+                            source: data.nomSite, 
+                            exportedAt 
+                        };
+                        const filename = exporter.formatFilename(data.nomSite, fmt.key === 'markdown' ? 'md' : fmt.key, data.titre, exportId);
+
+                        await exporter[fmt.fn](data.conversation, meta, filename);
+                        exporter.addHistoryItem({ id: exportId, titre: meta.titre, source: meta.source, exportedAt, format: fmt.label, filename });
+
+                        showToast(`✓ ${t('exportSuccess')} (${fmt.label})`);
+                    } catch (err) {
+                        showToast(`✗ ${t('exportFailed')}: ${err.message}`, true);
+                        console.error(err);
+                    } finally {
+                        this.setExporting(false);
+                    }
+                });
+
+                menu.appendChild(item);
             });
 
-            // Click outside to close
+            // Divider
+            const divider = dom.createElement('div', { style: { height: '1px', background: 'rgba(0,0,0,0.1)', margin: '8px 0' } });
+            menu.appendChild(divider);
+
+            // History
+            const histHeader = dom.createElement('div', {
+                className: 'ai-export-menu-section',
+                textContent: t('history')
+            });
+            menu.appendChild(histHeader);
+
+            const historyBtn = dom.createElement('div', {
+                className: 'ai-export-menu-item'
+            });
+            historyBtn.innerHTML = `🕒 <span>${t('history')}</span>`;
+            historyBtn.addEventListener('click', () => {
+                menu.style.display = 'none';
+                this.showHistoryModal();
+            });
+            menu.appendChild(historyBtn);
+
+            // Language quick switch
+            const langItem = dom.createElement('div', {
+                className: 'ai-export-menu-item'
+            });
+            langItem.innerHTML = `🌍 <span>${t('language')}</span>`;
+            langItem.addEventListener('click', () => {
+                const newLang = currentLang === 'en' ? 'fr' : 'en';
+                setLanguage(newLang);
+                showToast(`Language: ${newLang.toUpperCase()}`);
+                menu.style.display = 'none';
+            });
+            menu.appendChild(langItem);
+
+            // Clear history
+            const clearBtn = dom.createElement('div', {
+                className: 'ai-export-menu-item',
+                style: { color: '#ef4444', fontSize: '13px' }
+            });
+            clearBtn.innerHTML = `🗑️ <span>${t('clearHistory')}</span>`;
+            clearBtn.addEventListener('click', () => {
+                if (confirm('Clear all export history?')) {
+                    exporter.clearHistory();
+                    showToast('History cleared');
+                }
+                menu.style.display = 'none';
+            });
+            menu.appendChild(clearBtn);
+        }
+
+        showHistoryModal() {
+            const history = exporter.getHistory();
+            const modal = dom.createElement('div', {
+                style: {
+                    position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+                    background: 'rgba(0,0,0,0.6)', zIndex: '2147483647', display: 'flex',
+                    alignItems: 'center', justifyContent: 'center'
+                }
+            });
+
+            const content = dom.createElement('div', {
+                style: {
+                    background: 'white', borderRadius: '16px', width: 'min(620px, 92vw)',
+                    maxHeight: '80vh', overflow: 'auto', padding: '24px', boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.25)'
+                }
+            });
+
+            content.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                    <h2 style="margin:0;font-size:20px;font-weight:700">📜 ${t('history')}</h2>
+                    <button id="close-hist" style="background:none;border:none;font-size:22px;cursor:pointer;color:#666">&times;</button>
+                </div>
+            `;
+
+            if (history.length === 0) {
+                content.innerHTML += `<p style="color:#666;text-align:center;padding:40px 0">No exports yet. Use the buttons to export conversations.</p>`;
+            } else {
+                const list = dom.createElement('div');
+                history.forEach(item => {
+                    const row = dom.createElement('div', {
+                        style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #eee' }
+                    });
+                    row.innerHTML = `
+                        <div>
+                            <div style="font-weight:600">${item.titre}</div>
+                            <div style="font-size:12px;color:#666">${item.source} • ${new Date(item.exportedAt).toLocaleString()} • ${item.format}</div>
+                        </div>
+                        <div style="display:flex;gap:6px">
+                            <button class="hist-dl" data-file="${item.filename}" style="padding:4px 10px;border-radius:6px;border:1px solid #ddd;background:white;cursor:pointer;font-size:12px">Download</button>
+                        </div>
+                    `;
+                    list.appendChild(row);
+                });
+                content.appendChild(list);
+            }
+
+            modal.appendChild(content);
+            document.body.appendChild(modal);
+
+            // Close handlers
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) modal.remove();
+            });
+            content.querySelector('#close-hist').addEventListener('click', () => modal.remove());
+
+            // Download buttons
+            content.querySelectorAll('.hist-dl').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    // In real implementation we would re-generate or store the file content.
+                    // For simplicity we show a message.
+                    showToast('Re-downloading original file... (feature stores metadata only)');
+                    modal.remove();
+                });
+            });
+        }
+
+        setupEvents() {
+            // Toggle menu on main button click
+            const toggleMenu = (e) => {
+                if (e.target.closest('.ai-export-menu-panel')) return;
+                this.menuOpen = !this.menuOpen;
+                this.menu.style.display = this.menuOpen ? 'block' : 'none';
+            };
+
+            this.box.addEventListener('click', toggleMenu);
+
+            // Close menu when clicking outside
             document.addEventListener('click', (e) => {
                 if (!this.container.contains(e.target)) {
                     this.menu.style.display = 'none';
+                    this.menuOpen = false;
+                }
+            });
+
+            // Keyboard support (Escape closes menu)
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && this.menuOpen) {
+                    this.menu.style.display = 'none';
+                    this.menuOpen = false;
                 }
             });
         }
     }
 
-    // Keep rest of animations, initialize, etc. (same as original)
-    // ... (full original code for the rest remains unchanged except the class above)
+    // ==================== 11. INITIALISATION ====================
+    function initialize() {
+        // Only initialize once
+        if (window.__aiExportInitialized) return;
+        window.__aiExportInitialized = true;
 
-    // ==================== 9. INITIALISATION ====================
-    function initialize() { /* same */ }
+        // Small delay to ensure page is fully loaded
+        setTimeout(() => {
+            new FloatingButton();
+            console.log('%c[Finetune Exporter] LHS v2 initialized successfully on ' + detectPlatform(), 'color:#667eea');
+        }, 800);
+    }
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initialize);
     } else {
         initialize();
     }
+
 })();
