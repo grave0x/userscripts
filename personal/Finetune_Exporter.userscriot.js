@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         Finetune Exporter - Exporter Universel (LHS Modified v4)
+// @name         Finetune Exporter - Exporter Universel (LHS Modified v5)
 // @namespace    http://tampermonkey.net/
-// @version      4.0.0-LHS
+// @version      5.0.0-LHS
 // @license      CC BY-NC-SA 4.0
-// @description  Export conversations from ChatGPT, Gemini, DeepSeek, Grok, Claude, Copilot, Cohere, Mistral, Kimi, DeepInfra, DeepAI, Meta AI, Qwen, Perplexity, LinkedIn. Formats: JSON, JSONL, ShareGPT, Alpaca, Markdown, TXT, CSV, HTML. Modified: fixed bottom-left with auto-offset to avoid covering sidebars.
+// @description  Export conversations from ChatGPT, Gemini, DeepSeek, Grok, Claude, Copilot, Cohere, Mistral, Kimi, DeepInfra, DeepAI, Meta AI, Qwen, Perplexity, LinkedIn. Formats: JSON, JSONL, ShareGPT, Alpaca, Markdown, TXT, CSV, HTML. Added submenu for formats.
 // @author       Thibaut LOMBARD (@lombardweb) + grave0x (@grave0x)
 // @match        https://chatgpt.com/*
 // @match        https://gemini.google.com/*
@@ -65,7 +65,8 @@
             format: 'Format',
             source: 'Source',
             date: 'Date',
-            clearHistory: 'Clear History'
+            clearHistory: 'Clear History',
+            exportAs: 'Export as'
         },
         fr: {
             export: 'Exporter',
@@ -90,7 +91,8 @@
             format: 'Format',
             source: 'Source',
             date: 'Date',
-            clearHistory: 'Effacer l\'historique'
+            clearHistory: 'Effacer l\'historique',
+            exportAs: 'Exporter en'
         }
     };
 
@@ -200,7 +202,6 @@
         return 'generic';
     }
 
-    // Selector for the left sidebar (navigation panel) on each platform
     const sidebarSelectors = {
         chatgpt: '[data-testid="sidebar"], nav, .flex-1 .flex-col .flex-1 .overflow-y-auto:first-child',
         gemini: '[data-testid="sidebar"], .sidebar, [role="navigation"]',
@@ -229,7 +230,7 @@
                 return el.getBoundingClientRect().width;
             }
         }
-        return 0; // no sidebar found
+        return 0;
     }
 
     // ==================== 5. GESTIONNAIRES DE PLATEFORMES (Extracteurs) ====================
@@ -466,7 +467,7 @@
         .ai-export-container {
             position: fixed;
             bottom: 20px;
-            left: 20px; /* will be overridden by JS */
+            left: 20px;
             z-index: 2147483647;
             display: flex;
             align-items: center;
@@ -546,6 +547,7 @@
         .ai-export-menu-item {
             display: flex;
             align-items: center;
+            justify-content: space-between;
             gap: 10px;
             padding: 10px 14px;
             border-radius: 10px;
@@ -554,6 +556,7 @@
             font-weight: 500;
             color: #333;
             transition: background 0.1s ease;
+            position: relative;
         }
         .ai-export-menu-item:hover {
             background: rgba(102, 126, 234, 0.1);
@@ -570,15 +573,43 @@
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
+
+        /* Submenu */
+        .ai-export-submenu {
+            display: none;
+            position: absolute;
+            left: 100%;
+            top: 0;
+            min-width: 180px;
+            background: rgba(255,255,255,0.95);
+            backdrop-filter: blur(20px);
+            border-radius: 12px;
+            box-shadow: 0 12px 20px -8px rgba(0,0,0,0.15);
+            border: 1px solid rgba(0,0,0,0.08);
+            padding: 6px 0;
+            z-index: 2147483647;
+        }
+        .ai-export-submenu.dark {
+            background: rgba(30, 30, 35, 0.95);
+            color: #eee;
+            border-color: rgba(255,255,255,0.1);
+        }
+        .ai-export-menu-item:hover > .ai-export-submenu {
+            display: block;
+        }
+        .ai-export-submenu .ai-export-menu-item {
+            padding: 8px 16px;
+            white-space: nowrap;
+            justify-content: flex-start;
+        }
     `);
 
-    // ==================== 10. CLASSE FLOATINGBUTTON (avec décalage dynamique) ====================
+    // ==================== 10. CLASSE FLOATINGBUTTON ====================
     class FloatingButton {
         constructor() {
             this.isExporting = false;
             this.menuOpen = false;
 
-            // Container
             this.container = dom.createElement('div', { className: 'ai-export-container' });
             document.body.appendChild(this.container);
 
@@ -614,22 +645,16 @@
             this.box.appendChild(this.menu);
             this.container.appendChild(this.box);
 
-            // Set initial position with sidebar offset
             this.updatePosition();
-
-            // Update position on resize and when sidebar might toggle
             window.addEventListener('resize', () => this.updatePosition());
-            // Also observe DOM changes that might affect sidebar width (e.g., toggle)
             if (window.MutationObserver) {
                 const observer = new MutationObserver(() => this.updatePosition());
                 observer.observe(document.body, { attributes: true, childList: true, subtree: true, attributeFilter: ['class', 'style'] });
-                // Keep a reference to disconnect later if needed
                 this.observer = observer;
             }
 
             this.setupEvents();
 
-            // Dark mode detection
             if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
                 this.menu.classList.add('dark');
             }
@@ -640,9 +665,7 @@
         updatePosition() {
             const platform = detectPlatform();
             const sidebarWidth = getSidebarWidth(platform);
-            // Add 16px margin from the sidebar (or from screen edge if no sidebar)
-            const leftOffset = sidebarWidth + 16;
-            this.container.style.left = leftOffset + 'px';
+            this.container.style.left = (sidebarWidth + 16) + 'px';
         }
 
         async quickMDExport() {
@@ -686,8 +709,12 @@
             const menu = this.menu;
             menu.innerHTML = '';
 
-            const header = dom.createElement('div', { className: 'ai-export-menu-section', textContent: t('export') });
-            menu.appendChild(header);
+            // --- Parent: Export as (with submenu) ---
+            const parentItem = dom.createElement('div', { className: 'ai-export-menu-item' });
+            parentItem.innerHTML = `<span>📤 ${t('exportAs')}</span><span style="font-size:12px;color:#888;">▶</span>`;
+
+            const submenu = dom.createElement('div', { className: 'ai-export-submenu' });
+            if (this.menu.classList.contains('dark')) submenu.classList.add('dark');
 
             const formats = [
                 { key: 'markdown', label: t('markdown'), icon: '📝', fn: 'exportMarkdown' },
@@ -702,7 +729,7 @@
 
             formats.forEach(fmt => {
                 const item = dom.createElement('div', { className: 'ai-export-menu-item' });
-                item.innerHTML = `${fmt.icon} <span>${fmt.label}</span>`;
+                item.innerHTML = `${fmt.icon} ${fmt.label}`;
                 item.addEventListener('click', async (e) => {
                     e.stopImmediatePropagation();
                     menu.style.display = 'none';
@@ -725,13 +752,17 @@
                         this.setExporting(false);
                     }
                 });
-                menu.appendChild(item);
+                submenu.appendChild(item);
             });
 
-            // Divider
+            parentItem.appendChild(submenu);
+            menu.appendChild(parentItem);
+
+            // --- Divider ---
             const divider = dom.createElement('div', { style: { height: '1px', background: 'rgba(0,0,0,0.1)', margin: '8px 0' } });
             menu.appendChild(divider);
 
+            // --- History ---
             const histHeader = dom.createElement('div', { className: 'ai-export-menu-section', textContent: t('history') });
             menu.appendChild(histHeader);
 
@@ -743,6 +774,7 @@
             });
             menu.appendChild(historyBtn);
 
+            // --- Language ---
             const langItem = dom.createElement('div', { className: 'ai-export-menu-item' });
             langItem.innerHTML = `🌍 <span>${t('language')}</span>`;
             langItem.addEventListener('click', () => {
@@ -753,6 +785,7 @@
             });
             menu.appendChild(langItem);
 
+            // --- Clear History ---
             const clearBtn = dom.createElement('div', { className: 'ai-export-menu-item', style: { color: '#ef4444', fontSize: '13px' } });
             clearBtn.innerHTML = `🗑️ <span>${t('clearHistory')}</span>`;
             clearBtn.addEventListener('click', () => {
@@ -858,7 +891,7 @@
 
         setTimeout(() => {
             new FloatingButton();
-            console.log('%c[Finetune Exporter] v4 (bottom-left with sidebar offset) initialized on ' + detectPlatform(), 'color:#667eea');
+            console.log('%c[Finetune Exporter] v5 (with submenu) initialized on ' + detectPlatform(), 'color:#667eea');
         }, 800);
     }
 
