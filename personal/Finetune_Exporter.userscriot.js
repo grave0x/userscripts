@@ -121,6 +121,8 @@
         }
     };
 
+    
+
     // ==================== 2. UTILITAIRES DOM ====================
     const dom = {
         createElement: (tag, props = {}) => {
@@ -231,6 +233,23 @@
             }
         }
         return 0;
+    }
+
+    function getContentArea(platform) {
+        const selectors = {
+            grok: '#grok-content-area, [data-testid*="conversation"], [data-testid="chat-messages"], .chat-history, main[role="main"], .overflow-y-auto[role="main"], main',
+            chatgpt: 'main[role="main"], [role="main"] .flex-1.overflow-y-auto, #__next main',
+            gemini: 'main[role="main"], .chat-history, [data-testid="chat-history"]',
+            claude: 'main[role="main"], .chat-history, [data-testid="chat-history"]',
+            // add/adjust the rest similarly...
+            generic: 'main[role="main"], [role="main"], .chat-container, .messages-container, body'
+        };
+        const sel = selectors[platform] || selectors.generic;
+            for (let s of sel.split(',').map(x => x.trim())) {
+                const el = dom.qs(s);
+                if (el && el.getBoundingClientRect().height > 100) return el; // prefer substantial containers
+            }
+        return document.body;
     }
 
     // ==================== 5. GESTIONNAIRES DE PLATEFORMES (Extracteurs) ====================
@@ -611,7 +630,18 @@
             this.menuOpen = false;
 
             this.container = dom.createElement('div', { className: 'ai-export-container' });
-            document.body.appendChild(this.container);
+            
+            const target = getContentArea(platform);
+            if (target !== document.body) {
+                target.style.position = target.style.position || 'relative';
+            }
+            target.appendChild(this.container);
+            
+            // Make the container absolute-positioned inside the content area
+            this.container.style.position = 'absolute';
+            this.container.style.bottom = '24px';
+            this.container.style.right = '24px';
+            this.container.style.zIndex = '9999';
 
             // Quick MD Button
             this.mdBtn = dom.createElement('button', { 
