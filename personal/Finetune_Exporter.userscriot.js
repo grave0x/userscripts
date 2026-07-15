@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         Finetune Exporter - Exporter Universel (LHS Modified v3)
+// @name         Finetune Exporter - Exporter Universel (LHS Modified v4)
 // @namespace    http://tampermonkey.net/
-// @version      3.0.0-LHS
+// @version      4.0.0-LHS
 // @license      CC BY-NC-SA 4.0
-// @description  Export conversations from ChatGPT, Gemini, DeepSeek, Grok, Claude, Copilot, Cohere, Mistral, Kimi, DeepInfra, DeepAI, Meta AI, Qwen, Perplexity, LinkedIn. Formats: JSON, JSONL, ShareGPT, Alpaca, Markdown, TXT, CSV, HTML. Modified: buttons placed under profile div on all platforms.
+// @description  Export conversations from ChatGPT, Gemini, DeepSeek, Grok, Claude, Copilot, Cohere, Mistral, Kimi, DeepInfra, DeepAI, Meta AI, Qwen, Perplexity, LinkedIn. Formats: JSON, JSONL, ShareGPT, Alpaca, Markdown, TXT, CSV, HTML. Modified: fixed bottom-left with auto-offset to avoid covering sidebars.
 // @author       Thibaut LOMBARD (@lombardweb) + grave0x (@grave0x)
 // @match        https://chatgpt.com/*
 // @match        https://gemini.google.com/*
@@ -38,7 +38,7 @@
 (function() {
     'use strict';
 
-    // ==================== 1. TRADUCTIONS (22 LANGUES SIMPLIFIÉES - Anglais + Français principal) ====================
+    // ==================== 1. TRADUCTIONS ====================
     const LANGUAGE_LIST = ['en', 'fr', 'es', 'de', 'zh', 'ja', 'ko', 'pt', 'ru', 'it', 'nl', 'pl', 'tr', 'ar', 'hi', 'th', 'vi', 'id', 'sv', 'da', 'fi', 'no'];
 
     const translations = {
@@ -179,7 +179,7 @@
         }
     };
 
-    // ==================== 4. DÉTECTION PLATEFORME & PROFIL CONTAINER ====================
+    // ==================== 4. DÉTECTION PLATEFORME & SIDEBAR ====================
     function detectPlatform() {
         const host = location.hostname;
         if (host.includes('chatgpt.com')) return 'chatgpt';
@@ -200,35 +200,36 @@
         return 'generic';
     }
 
-    // Map platform to selector for the profile container (element after which we insert our UI)
-    const profileSelectors = {
-        chatgpt: '[data-testid="user-menu"], .flex-1 .flex-1 .flex .items-center .gap-2:last-child',
-        gemini: '[data-testid="user-avatar"], .user-avatar-container, header [role="button"][aria-label*="account"]',
-        claude: '[data-testid="user-menu"], .UserMenu, header [aria-label="User menu"]',
-        grok: '[data-testid="UserMenu"], [aria-label*="profile"], [aria-label*="account"]',
-        perplexity: '[data-testid="user-menu"], .user-menu, header [aria-label*="profile"]',
-        kimi: '.user-avatar, .profile, header [class*="avatar"]',
-        mistral: '[data-testid="user-menu"], .user-menu, header [aria-label*="profile"]',
-        meta: '[data-testid="user-menu"], .profile-icon, header [aria-label*="profile"]',
-        qwen: '.user-avatar, .profile, header [class*="avatar"]',
-        deepseek: '.user-avatar, .profile, header [class*="avatar"]',
-        copilot: '[data-testid="user-menu"], .profile, header [aria-label*="account"]',
-        linkedin: '.profile-rail, .profile-card, header .profile-trigger',
-        cohere: '[data-testid="user-menu"], .profile, header [aria-label*="profile"]',
-        deepinfra: '[data-testid="user-menu"], .profile, header [aria-label*="profile"]',
-        deepai: '[data-testid="user-menu"], .profile, header [aria-label*="profile"]',
-        generic: 'header, .header, .navbar, .top-bar' // fallback to a header element
+    // Selector for the left sidebar (navigation panel) on each platform
+    const sidebarSelectors = {
+        chatgpt: '[data-testid="sidebar"], nav, .flex-1 .flex-col .flex-1 .overflow-y-auto:first-child',
+        gemini: '[data-testid="sidebar"], .sidebar, [role="navigation"]',
+        claude: '[data-testid="sidebar"], .sidebar, [role="navigation"]',
+        grok: '[data-testid="sidebar"], .sidebar, [role="navigation"]',
+        perplexity: '[data-testid="sidebar"], .sidebar, [role="navigation"]',
+        kimi: '.sidebar, .navigation, [class*="sidebar"]',
+        mistral: '[data-testid="sidebar"], .sidebar, [role="navigation"]',
+        meta: '[data-testid="sidebar"], .sidebar, [role="navigation"]',
+        qwen: '.sidebar, .navigation, [class*="sidebar"]',
+        deepseek: '.sidebar, .navigation, [class*="sidebar"]',
+        copilot: '[data-testid="sidebar"], .sidebar, [role="navigation"]',
+        linkedin: '.scaffold-layout__list, .left-rail, .profile-rail',
+        cohere: '[data-testid="sidebar"], .sidebar, [role="navigation"]',
+        deepinfra: '[data-testid="sidebar"], .sidebar, [role="navigation"]',
+        deepai: '[data-testid="sidebar"], .sidebar, [role="navigation"]',
+        generic: 'aside, .sidebar, [role="navigation"]'
     };
 
-    function getProfileContainer(platform) {
-        const selector = profileSelectors[platform] || profileSelectors.generic;
-        // try multiple selectors if comma separated
+    function getSidebarWidth(platform) {
+        const selector = sidebarSelectors[platform] || sidebarSelectors.generic;
         const selectors = selector.split(',').map(s => s.trim());
         for (let sel of selectors) {
             const el = dom.qs(sel);
-            if (el) return el;
+            if (el && el.getBoundingClientRect().width > 0) {
+                return el.getBoundingClientRect().width;
+            }
         }
-        return null;
+        return 0; // no sidebar found
     }
 
     // ==================== 5. GESTIONNAIRES DE PLATEFORMES (Extracteurs) ====================
@@ -306,7 +307,6 @@
                 return { nomSite: location.hostname, titre: document.title, titreBrut: document.title, conversation: messages };
             }
         }
-        // Additional platforms (perplexity, kimi, etc.) can be added similarly
     };
 
     // ==================== 6. EXPORTEUR ====================
@@ -464,22 +464,14 @@
     // ==================== 9. CSS ====================
     GM_addStyle(`
         .ai-export-container {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            margin-left: 8px;
-            vertical-align: middle;
-            position: relative;  /* for menu positioning */
-            z-index: 2147483647;
-        }
-        /* fallback fixed position when not placed in header */
-        .ai-export-container.fallback {
             position: fixed;
             bottom: 20px;
-            left: 20px;
-            margin: 0;
+            left: 20px; /* will be overridden by JS */
+            z-index: 2147483647;
+            display: flex;
+            align-items: center;
             gap: 8px;
-            flex-direction: row;
+            pointer-events: auto;
         }
 
         .ai-export-drag-box, .ai-export-md-btn {
@@ -490,30 +482,30 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             font-size: 14px;
             font-weight: 600;
-            padding: 8px 16px;
+            padding: 10px 20px;
             cursor: pointer;
             user-select: none;
             border: none;
             box-shadow: 0 4px 15px rgba(0,0,0,0.25);
             transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             white-space: nowrap;
-            display: inline-flex;
+            display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 8px;
             touch-action: none;
             letter-spacing: -.2px;
             line-height: 1.2;
         }
 
         .ai-export-drag-box:hover, .ai-export-md-btn:hover {
-            transform: translateY(-2px) scale(1.02);
+            transform: translateY(-3px) scale(1.02);
             box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
         }
 
         .ai-export-md-btn {
             background: linear-gradient(135deg, #4ade80 0%, #16a34a 100%);
-            font-size: 13px;
-            padding: 8px 14px;
+            font-size: 13.5px;
+            padding: 10px 16px;
             font-weight: 700;
         }
         .ai-export-md-btn:hover {
@@ -521,7 +513,7 @@
         }
 
         .ai-export-spinner {
-            margin-left: 4px;
+            margin-left: 6px;
             font-size: 13px;
             animation: ai-spin 1s linear infinite;
         }
@@ -532,9 +524,9 @@
 
         .ai-export-menu-panel {
             position: absolute;
-            top: calc(100% + 8px);
+            bottom: calc(100% + 12px);
             left: 0;
-            min-width: 230px;
+            min-width: 260px;
             background: rgba(255,255,255,0.95);
             backdrop-filter: blur(20px);
             border-radius: 16px;
@@ -555,7 +547,7 @@
             display: flex;
             align-items: center;
             gap: 10px;
-            padding: 8px 12px;
+            padding: 10px 14px;
             border-radius: 10px;
             cursor: pointer;
             font-size: 14px;
@@ -571,7 +563,7 @@
         }
 
         .ai-export-menu-section {
-            padding: 4px 8px 2px;
+            padding: 6px 8px 4px;
             font-size: 11px;
             font-weight: 700;
             color: #888;
@@ -580,7 +572,7 @@
         }
     `);
 
-    // ==================== 10. CLASSE FLOATINGBUTTON ====================
+    // ==================== 10. CLASSE FLOATINGBUTTON (avec décalage dynamique) ====================
     class FloatingButton {
         constructor() {
             this.isExporting = false;
@@ -588,6 +580,7 @@
 
             // Container
             this.container = dom.createElement('div', { className: 'ai-export-container' });
+            document.body.appendChild(this.container);
 
             // Quick MD Button
             this.mdBtn = dom.createElement('button', { 
@@ -621,18 +614,17 @@
             this.box.appendChild(this.menu);
             this.container.appendChild(this.box);
 
-            // Insert under profile or fallback to body
-            const platform = detectPlatform();
-            const profile = getProfileContainer(platform);
-            if (profile && profile.parentNode) {
-                // Insert after the profile element
-                profile.parentNode.insertBefore(this.container, profile.nextSibling);
-                // Add a small margin if needed
-                this.container.style.marginLeft = '8px';
-            } else {
-                // Fallback: fixed bottom-left
-                document.body.appendChild(this.container);
-                this.container.classList.add('fallback');
+            // Set initial position with sidebar offset
+            this.updatePosition();
+
+            // Update position on resize and when sidebar might toggle
+            window.addEventListener('resize', () => this.updatePosition());
+            // Also observe DOM changes that might affect sidebar width (e.g., toggle)
+            if (window.MutationObserver) {
+                const observer = new MutationObserver(() => this.updatePosition());
+                observer.observe(document.body, { attributes: true, childList: true, subtree: true, attributeFilter: ['class', 'style'] });
+                // Keep a reference to disconnect later if needed
+                this.observer = observer;
             }
 
             this.setupEvents();
@@ -643,6 +635,14 @@
             }
 
             window.__floatingButton = this;
+        }
+
+        updatePosition() {
+            const platform = detectPlatform();
+            const sidebarWidth = getSidebarWidth(platform);
+            // Add 16px margin from the sidebar (or from screen edge if no sidebar)
+            const leftOffset = sidebarWidth + 16;
+            this.container.style.left = leftOffset + 'px';
         }
 
         async quickMDExport() {
@@ -858,7 +858,7 @@
 
         setTimeout(() => {
             new FloatingButton();
-            console.log('%c[Finetune Exporter] v3 (profile‑integrated) initialized on ' + detectPlatform(), 'color:#667eea');
+            console.log('%c[Finetune Exporter] v4 (bottom-left with sidebar offset) initialized on ' + detectPlatform(), 'color:#667eea');
         }, 800);
     }
 
