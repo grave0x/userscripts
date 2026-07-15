@@ -235,19 +235,63 @@
         return 0;
     }
 
+    // NEW: Sidebar-aware positioning for export button
+    function getSidebarOffset() {
+        const root = document.documentElement;
+        const sidebar = document.querySelector('[data-variant="sidebar"]') || 
+                        document.querySelector('.group.peer[data-side="left"]');
+        
+        if (!sidebar) return '16px';
+        
+        const state = sidebar.getAttribute('data-state');
+        const isExpanded = state === 'expanded' || state === '';
+        
+        let width = getComputedStyle(root).getPropertyValue('--sidebar-width').trim();
+        if (!width || width === '0px') {
+            width = isExpanded ? '16rem' : '3.5rem';
+        }
+        
+        return `calc(${width} + 16px)`;
+    }
+
+    function positionExportUI() {
+        const container = document.querySelector('.ai-export-container');
+        if (!container) return;
+        
+        container.style.position = 'fixed';
+        container.style.left = getSidebarOffset();
+        container.style.bottom = '24px';
+        container.style.zIndex = '99999';
+    }
+
+    function initSidebarAwarePositioning() {
+        positionExportUI();
+        
+        const sidebar = document.querySelector('[data-variant="sidebar"]');
+        if (sidebar) {
+            const observer = new MutationObserver(() => positionExportUI());
+            observer.observe(sidebar, { attributes: true, attributeFilter: ['data-state', 'class'] });
+        }
+        
+        const root = document.documentElement;
+        const varObserver = new MutationObserver(() => positionExportUI());
+        varObserver.observe(root, { attributes: true, attributeFilter: ['style'] });
+        
+        window.addEventListener('resize', () => positionExportUI(), { passive: true });
+    }
+
     function getContentArea(platform) {
         const selectors = {
             grok: '#grok-content-area, [data-testid*="conversation"], [data-testid="chat-messages"], .chat-history, main[role="main"], .overflow-y-auto[role="main"], main',
             chatgpt: 'main[role="main"], [role="main"] .flex-1.overflow-y-auto, #__next main',
             gemini: 'main[role="main"], .chat-history, [data-testid="chat-history"]',
             claude: 'main[role="main"], .chat-history, [data-testid="chat-history"]',
-            // add/adjust the rest similarly...
             generic: 'main[role="main"], [role="main"], .chat-container, .messages-container, body'
         };
         const sel = selectors[platform] || selectors.generic;
             for (let s of sel.split(',').map(x => x.trim())) {
                 const el = dom.qs(s);
-                if (el && el.getBoundingClientRect().height > 100) return el; // prefer substantial containers
+                if (el && el.getBoundingClientRect().height > 100) return el;
             }
         return document.body;
     }
@@ -401,7 +445,7 @@
                 .msg{margin-bottom:30px} .role{font-weight:bold;color:#555} .content{white-space:pre-wrap}</style></head><body>`;
             html += `<h1>${meta.titre}</h1><p><strong>Source:</strong> ${meta.source} | <strong>Date:</strong> ${meta.exportedAt}</p><hr>`;
             conversation.forEach(msg => {
-                html += `<div class="msg"><div class="role">${msg.role}</div><div class="content">${msg.content.replace(/</g,'&lt;')}</div></div>`;
+                html += `<div class="msg"><div class="role">${msg.role}</div><div class="content">${msg.content.replace(/</g,'<')}</div></div>`;
             });
             html += '</body></html>';
             this.downloadFile(html, filename, 'text/html');
@@ -631,13 +675,12 @@
 
             this.container = dom.createElement('div', { className: 'ai-export-container' });
             
-            const target = getContentArea(platform);
+            const target = getContentArea(detectPlatform());
             if (target !== document.body) {
                 target.style.position = target.style.position || 'relative';
             }
             target.appendChild(this.container);
             
-            // Make the container absolute-positioned inside the content area
             this.container.style.position = 'absolute';
             this.container.style.bottom = '24px';
             this.container.style.right = '24px';
@@ -690,6 +733,9 @@
             }
 
             window.__floatingButton = this;
+
+            // NEW: Initialize sidebar-aware positioning
+            initSidebarAwarePositioning();
         }
 
         updatePosition() {
@@ -739,7 +785,6 @@
             const menu = this.menu;
             menu.innerHTML = '';
 
-            // --- Parent: Export as (with submenu) ---
             const parentItem = dom.createElement('div', { className: 'ai-export-menu-item' });
             parentItem.innerHTML = `<span>📤 ${t('exportAs')}</span><span style="font-size:12px;color:#888;">▶</span>`;
 
@@ -788,11 +833,9 @@
             parentItem.appendChild(submenu);
             menu.appendChild(parentItem);
 
-            // --- Divider ---
             const divider = dom.createElement('div', { style: { height: '1px', background: 'rgba(0,0,0,0.1)', margin: '8px 0' } });
             menu.appendChild(divider);
 
-            // --- History ---
             const histHeader = dom.createElement('div', { className: 'ai-export-menu-section', textContent: t('history') });
             menu.appendChild(histHeader);
 
@@ -804,7 +847,6 @@
             });
             menu.appendChild(historyBtn);
 
-            // --- Language ---
             const langItem = dom.createElement('div', { className: 'ai-export-menu-item' });
             langItem.innerHTML = `🌍 <span>${t('language')}</span>`;
             langItem.addEventListener('click', () => {
@@ -815,7 +857,6 @@
             });
             menu.appendChild(langItem);
 
-            // --- Clear History ---
             const clearBtn = dom.createElement('div', { className: 'ai-export-menu-item', style: { color: '#ef4444', fontSize: '13px' } });
             clearBtn.innerHTML = `🗑️ <span>${t('clearHistory')}</span>`;
             clearBtn.addEventListener('click', () => {
@@ -921,7 +962,7 @@
 
         setTimeout(() => {
             new FloatingButton();
-            console.log('%c[Finetune Exporter] v5 (with submenu) initialized on ' + detectPlatform(), 'color:#667eea');
+            console.log('%c[Finetune Exporter] v5 (with submenu + sidebar sync) initialized on ' + detectPlatform(), 'color:#667eea');
         }, 800);
     }
 
