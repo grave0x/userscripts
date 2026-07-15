@@ -4,7 +4,7 @@
 // @version      2.0.0-LHS
 // @license      CC BY-NC-SA 4.0
 // @description  Export conversations from ChatGPT, Gemini, DeepSeek, Grok, Claude, Copilot, Cohere, Mistral, Kimi, DeepInfra, DeepAI, Meta AI, Qwen, Perplexity, LinkedIn. Formats: JSON, JSONL, ShareGPT, Alpaca, Markdown, TXT, CSV, HTML. Modified: Fixed position bottom-left + dedicated Quick MD button. No drag.
-// @author       Thibaut LOMBARD (@lombardweb) + grave0x (@grave0x) + Grok rewrite for LHS
+// @author       Thibaut LOMBARD (@lombardweb) + grave0x (@grave0x)
 // @match        https://chatgpt.com/*
 // @match        https://gemini.google.com/*
 // @match        https://gemini.google.com/app/*
