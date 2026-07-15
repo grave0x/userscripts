@@ -31,8 +31,8 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_download
-// @downloadURL https://github.com/grave0x/userscripts/raw/refs/heads/main/personal/Finetune_Exporter.userscriot.js
-// @updateURL https://github.com/grave0x/userscripts/raw/refs/heads/main/personal/Finetune_Exporter.userscriot.js
+// @downloadURL https://raw.githubusercontent.com/grave0x/userscripts/refs/heads/main/personal/Finetune_Exporter.userscriot.js
+// @updateURL https://raw.githubusercontent.com/grave0x/userscripts/refs/heads/main/personal/Finetune_Exporter.userscriot.js
 // ==/UserScript==
 
 (function() {
@@ -735,7 +735,6 @@
             window.__floatingButton = this;
 
             // NEW: Initialize sidebar-aware positioning
-            initSidebarAwarePositioning();
         }
 
         updatePosition() {
@@ -962,6 +961,7 @@
 
         setTimeout(() => {
             new FloatingButton();
+            initSidebarAwarePositioning();
             console.log('%c[Finetune Exporter] v5 (with submenu + sidebar sync) initialized on ' + detectPlatform(), 'color:#667eea');
         }, 800);
     }
