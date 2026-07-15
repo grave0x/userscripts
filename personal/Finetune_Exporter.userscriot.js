@@ -235,7 +235,7 @@
         return 0;
     }
 
-    // NEW: Sidebar-aware positioning for export button
+    // ==================== SIDEBAR-AWARE POSITIONING (NEW) ====================
     function getSidebarOffset() {
         const root = document.documentElement;
         const sidebar = document.querySelector('[data-variant="sidebar"]') || 
@@ -253,7 +253,7 @@
         
         return `calc(${width} + 16px)`;
     }
-
+    
     function positionExportUI() {
         const container = document.querySelector('.ai-export-container');
         if (!container) return;
@@ -263,7 +263,7 @@
         container.style.bottom = '24px';
         container.style.zIndex = '99999';
     }
-
+    
     function initSidebarAwarePositioning() {
         positionExportUI();
         
