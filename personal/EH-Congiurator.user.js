@@ -1,15 +1,14 @@
 // ==UserScript==
 // @name         EH-Congiurator
 // @namespace    https://github.com/grave0x/userscripts
-// @version      1.0.0
-// @description  Infinite scroll reader + ZIP/CBZ downloader with ComicInfo.xml metadata for E-Hentai / ExHentai image pages
+// @version      1.2.0
+// @description  Infinite scroll reader + ZIP/CBZ downloader with ComicInfo.xml for E-Hentai / ExHentai image pages. Integrates useful features from other EH scripts.
 // @author       grave0x
 // @match        https://e-hentai.org/s/*
 // @match        https://exhentai.org/s/*
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js
 // @grant        GM_getValue
 // @grant        GM_setValue
-// @grant        GM_registerMenuCommand
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -27,16 +26,18 @@
     downloadFormat: 'cbz',
     includeComicInfo: true,
     concurrentDownloads: 3,
-    preferJapaneseTitle: false
+    preferJapaneseTitle: false,
+    preferOriginal: true,
+    saveProgress: true,
+    keyboardNav: true,
+    imageFit: 'width',
+    showOverlay: true,
+    downloadRange: 'full'
   };
 
   const config = {
-    get(key) {
-      return GM_getValue(key, DEFAULTS[key]);
-    },
-    set(key, value) {
-      GM_setValue(key, value);
-    },
+    get(key) { return GM_getValue(key, DEFAULTS[key]); },
+    set(key, value) { GM_setValue(key, value); },
     all() {
       const out = {};
       for (const k of Object.keys(DEFAULTS)) out[k] = this.get(k);
@@ -49,26 +50,52 @@
     panel.id = 'eh-config-panel';
     panel.style.cssText = `
       position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-      background: #1a1a1a; color: #eee; border: 1px solid #444; border-radius: 8px;
-      padding: 16px; z-index: 10000; min-width: 320px; font: 14px system-ui, sans-serif;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.6); display: none;
+      background: #1a1a1a; color: #eee; border: 1px solid #444; border-radius: 10px;
+      padding: 18px; z-index: 10000; width: 380px; max-height: 85vh; overflow-y: auto;
+      font: 14px system-ui, sans-serif; box-shadow: 0 8px 32px rgba(0,0,0,0.6); display: none;
     `;
     panel.innerHTML = `
-      <h3 style="margin:0 0 12px; font-size:16px;">EH-Congiurator Config</h3>
-      <label style="display:block; margin:8px 0;"><input type="checkbox" id="cfg-infinite"> Infinite Scroll</label>
-      <label style="display:block; margin:8px 0;">Preload margin (px): <input type="number" id="cfg-margin" style="width:80px; background:#222; color:#eee; border:1px solid #555; padding:2px 4px;"></label>
-      <label style="display:block; margin:8px 0;">Default download: 
-        <select id="cfg-format" style="background:#222; color:#eee; border:1px solid #555; padding:2px 4px;">
-          <option value="cbz">CBZ (with ComicInfo.xml)</option>
-          <option value="zip">ZIP</option>
-        </select>
-      </label>
-      <label style="display:block; margin:8px 0;"><input type="checkbox" id="cfg-comicinfo"> Embed ComicInfo.xml</label>
-      <label style="display:block; margin:8px 0;">Concurrent downloads: <input type="number" id="cfg-concurrent" min="1" max="8" style="width:60px; background:#222; color:#eee; border:1px solid #555; padding:2px 4px;"></label>
-      <label style="display:block; margin:8px 0;"><input type="checkbox" id="cfg-jpn"> Prefer Japanese title</label>
-      <div style="margin-top:14px; text-align:right;">
-        <button id="cfg-save" style="background:#4a9eff; color:#fff; border:none; padding:6px 14px; border-radius:4px; cursor:pointer;">Save</button>
-        <button id="cfg-close" style="background:#555; color:#fff; border:none; padding:6px 14px; border-radius:4px; cursor:pointer; margin-left:6px;">Close</button>
+      <h3 style="margin:0 0 14px; font-size:17px;">EH-Congiurator Settings</h3>
+
+      <div style="margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid #333;">
+        <strong>Reading</strong>
+        <label style="display:block; margin:6px 0;"><input type="checkbox" id="cfg-infinite"> Continuous scroll (load next page automatically)</label>
+        <label style="display:block; margin:6px 0;">How early to start loading the next page (px): <input type="number" id="cfg-margin" style="width:70px; background:#222; color:#eee; border:1px solid #555; padding:2px 4px;"></label>
+        <label style="display:block; margin:6px 0;">Image size:
+          <select id="cfg-fit" style="background:#222; color:#eee; border:1px solid #555; padding:2px 4px;">
+            <option value="width">Fit to window width</option>
+            <option value="contain">Fit inside window</option>
+            <option value="original">Original size</option>
+          </select>
+        </label>
+        <label style="display:block; margin:6px 0;"><input type="checkbox" id="cfg-keys"> Arrow keys / Space to advance</label>
+        <label style="display:block; margin:6px 0;"><input type="checkbox" id="cfg-progress"> Remember where I left off</label>
+        <label style="display:block; margin:6px 0;"><input type="checkbox" id="cfg-overlay"> Show title & tags at the top</label>
+      </div>
+
+      <div style="margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid #333;">
+        <strong>Download</strong>
+        <label style="display:block; margin:6px 0;">File type:
+          <select id="cfg-format" style="background:#222; color:#eee; border:1px solid #555; padding:2px 4px;">
+            <option value="cbz">CBZ (comic format with metadata)</option>
+            <option value="zip">ZIP</option>
+          </select>
+        </label>
+        <label style="display:block; margin:6px 0;"><input type="checkbox" id="cfg-comicinfo"> Include ComicInfo.xml (so readers see title/tags)</label>
+        <label style="display:block; margin:6px 0;"><input type="checkbox" id="cfg-original"> Prefer full-resolution originals when available</label>
+        <label style="display:block; margin:6px 0;">How many images to download at once: <input type="number" id="cfg-concurrent" min="1" max="8" style="width:50px; background:#222; color:#eee; border:1px solid #555; padding:2px 4px;"></label>
+        <label style="display:block; margin:6px 0;">Download range:
+          <select id="cfg-range" style="background:#222; color:#eee; border:1px solid #555; padding:2px 4px;">
+            <option value="full">Whole gallery</option>
+            <option value="from-current">From current page to the end</option>
+          </select>
+        </label>
+        <label style="display:block; margin:6px 0;"><input type="checkbox" id="cfg-jpn"> Prefer Japanese title when available</label>
+      </div>
+
+      <div style="text-align:right;">
+        <button id="cfg-save" style="background:#4a9eff; color:#fff; border:none; padding:7px 16px; border-radius:4px; cursor:pointer;">Save</button>
+        <button id="cfg-close" style="background:#555; color:#fff; border:none; padding:7px 16px; border-radius:4px; cursor:pointer; margin-left:6px;">Close</button>
       </div>
     `;
     document.body.appendChild(panel);
@@ -76,23 +103,34 @@
     const c = config.all();
     panel.querySelector('#cfg-infinite').checked = c.infiniteScroll;
     panel.querySelector('#cfg-margin').value = c.preloadMargin;
+    panel.querySelector('#cfg-fit').value = c.imageFit;
+    panel.querySelector('#cfg-keys').checked = c.keyboardNav;
+    panel.querySelector('#cfg-progress').checked = c.saveProgress;
+    panel.querySelector('#cfg-overlay').checked = c.showOverlay;
     panel.querySelector('#cfg-format').value = c.downloadFormat;
     panel.querySelector('#cfg-comicinfo').checked = c.includeComicInfo;
+    panel.querySelector('#cfg-original').checked = c.preferOriginal;
     panel.querySelector('#cfg-concurrent').value = c.concurrentDownloads;
+    panel.querySelector('#cfg-range').value = c.downloadRange;
     panel.querySelector('#cfg-jpn').checked = c.preferJapaneseTitle;
 
     panel.querySelector('#cfg-save').onclick = () => {
       config.set('infiniteScroll', panel.querySelector('#cfg-infinite').checked);
       config.set('preloadMargin', parseInt(panel.querySelector('#cfg-margin').value, 10) || 800);
+      config.set('imageFit', panel.querySelector('#cfg-fit').value);
+      config.set('keyboardNav', panel.querySelector('#cfg-keys').checked);
+      config.set('saveProgress', panel.querySelector('#cfg-progress').checked);
+      config.set('showOverlay', panel.querySelector('#cfg-overlay').checked);
       config.set('downloadFormat', panel.querySelector('#cfg-format').value);
       config.set('includeComicInfo', panel.querySelector('#cfg-comicinfo').checked);
+      config.set('preferOriginal', panel.querySelector('#cfg-original').checked);
       config.set('concurrentDownloads', parseInt(panel.querySelector('#cfg-concurrent').value, 10) || 3);
+      config.set('downloadRange', panel.querySelector('#cfg-range').value);
       config.set('preferJapaneseTitle', panel.querySelector('#cfg-jpn').checked);
       panel.style.display = 'none';
-      alert('Config saved. Reload the page for infinite-scroll changes to take full effect.');
+      alert('Settings saved. Reload the page for reading changes to take full effect.');
     };
     panel.querySelector('#cfg-close').onclick = () => panel.style.display = 'none';
-
     return panel;
   }
 
@@ -103,23 +141,108 @@
     position: fixed; bottom: 16px; right: 16px; z-index: 9999;
     display: flex; flex-direction: column; gap: 8px;
   `;
-  const cfgBtn = document.createElement('button');
-  cfgBtn.textContent = '⚙ Config';
-  cfgBtn.style.cssText = 'background:#333; color:#fff; border:1px solid #555; padding:8px 12px; border-radius:6px; cursor:pointer; font:13px system-ui;';
+
+  function makeBtn(text, bg) {
+    const b = document.createElement('button');
+    b.textContent = text;
+    b.style.cssText = `background:${bg}; color:#fff; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font:13px system-ui; min-width:120px;`;
+    return b;
+  }
+
+  const cfgBtn = makeBtn('⚙ Settings', '#333');
   cfgBtn.onclick = () => configPanel.style.display = configPanel.style.display === 'none' ? 'block' : 'none';
 
-  const dlBtn = document.createElement('button');
-  dlBtn.textContent = '⬇ Download';
-  dlBtn.style.cssText = 'background:#2a7; color:#fff; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font:13px system-ui;';
+  const jumpBtn = makeBtn('⇄ Jump to page', '#555');
+  jumpBtn.onclick = () => {
+    const n = prompt('Jump to page number:');
+    if (!n) return;
+    const page = parseInt(n, 10);
+    if (!page || page < 1) return;
+    const parts = location.pathname.split('/');
+    if (parts.length >= 4) {
+      location.href = parts.slice(0, 3).join('/') + '-' + page + location.search;
+    }
+  };
+
+  const dlBtn = makeBtn('⬇ Download', '#2a7');
   dlBtn.onclick = () => startDownload();
 
   btnBar.appendChild(cfgBtn);
+  btnBar.appendChild(jumpBtn);
   btnBar.appendChild(dlBtn);
   document.body.appendChild(btnBar);
+
+  function progressKey() {
+    const m = location.pathname.match(/\/s\/[^/]+\/(\d+)-/);
+    return m ? 'eh-progress-' + m[1] : null;
+  }
+  function saveProgress(page) {
+    if (!config.get('saveProgress')) return;
+    const k = progressKey();
+    if (k) GM_setValue(k, page);
+  }
+  function loadProgress() {
+    if (!config.get('saveProgress')) return null;
+    const k = progressKey();
+    return k ? GM_getValue(k, null) : null;
+  }
+
+  function applyFit(img) {
+    const mode = config.get('imageFit');
+    img.style.display = 'block';
+    if (mode === 'width') {
+      img.style.maxWidth = '100%';
+      img.style.height = 'auto';
+      img.style.width = 'auto';
+    } else if (mode === 'contain') {
+      img.style.maxWidth = '100%';
+      img.style.maxHeight = '100vh';
+      img.style.height = 'auto';
+      img.style.width = 'auto';
+    } else {
+      img.style.maxWidth = 'none';
+      img.style.width = 'auto';
+      img.style.height = 'auto';
+    }
+  }
+
+  async function maybeShowOverlay() {
+    if (!config.get('showOverlay')) return;
+    const galleryLink = document.querySelector('#i5 a')?.href;
+    if (!galleryLink) return;
+    const m = galleryLink.match(/\/g\/(\d+)\/([a-z0-9]+)\//);
+    if (!m) return;
+    try {
+      const res = await fetch(window.api_url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ method: 'gdata', gidlist: [[parseInt(m[1],10), m[2]]], namespace: 1 })
+      });
+      const data = await res.json();
+      const meta = data.gmetadata?.[0];
+      if (!meta) return;
+      const title = config.get('preferJapaneseTitle') && meta.title_jpn ? meta.title_jpn : meta.title;
+      const tags = (meta.tags || []).slice(0, 12).join(' · ');
+      const overlay = document.createElement('div');
+      overlay.style.cssText = `
+        position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
+        background: rgba(0,0,0,0.75); color: #eee; padding: 8px 14px; border-radius: 6px;
+        font: 13px system-ui; z-index: 9998; max-width: 70%; text-align: center; pointer-events: none;
+      `;
+      overlay.innerHTML = `<div style="font-weight:600;">${escapeHtml(title)}</div><div style="font-size:11px; opacity:0.85; margin-top:2px;">${escapeHtml(tags)}</div>`;
+      document.body.appendChild(overlay);
+    } catch (e) { /* ignore */ }
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&','<':'<','>':'>','"':'"',"'":'&#39;'}[c]));
+  }
 
   if (config.get('infiniteScroll')) {
     initInfiniteScroll();
   }
+  maybeShowOverlay();
 
   function initInfiniteScroll() {
     const container = document.getElementById('i1') || document.body;
@@ -132,6 +255,7 @@
 
     const originalWrapper = originalImg.closest('a') || originalImg;
     originalWrapper.style.display = 'block';
+    applyFit(originalImg);
     stack.appendChild(originalWrapper);
     container.appendChild(stack);
 
@@ -171,6 +295,17 @@
     extractNext();
     extractTotal();
 
+    const saved = loadProgress();
+    if (saved && saved !== currentPage && saved > 1) {
+      if (confirm(`Resume at page ${saved}?`)) {
+        const parts = location.pathname.split('/');
+        if (parts.length >= 4) {
+          location.href = parts.slice(0, 3).join('/') + '-' + saved + location.search;
+          return;
+        }
+      }
+    }
+
     const counter = document.createElement('div');
     counter.style.cssText = `
       position: fixed; bottom: 12px; left: 12px;
@@ -181,6 +316,7 @@
 
     function updateCounter() {
       counter.textContent = totalPages ? `${currentPage} / ${totalPages}` : `Page ${currentPage}`;
+      saveProgress(currentPage);
     }
     updateCounter();
 
@@ -214,13 +350,16 @@
 
         const tmp = document.createElement('div');
         tmp.innerHTML = data.i3;
-        const newImg = tmp.querySelector('#img') || tmp.querySelector('img');
+        let newImg = tmp.querySelector('#img') || tmp.querySelector('img');
         if (!newImg) throw new Error('Could not find image');
 
+        if (config.get('preferOriginal')) {
+          const orig = extractOriginalUrl(data);
+          if (orig) newImg.src = orig;
+        }
+
         newImg.removeAttribute('id');
-        newImg.style.maxWidth = '100%';
-        newImg.style.height = 'auto';
-        newImg.style.display = 'block';
+        applyFit(newImg);
 
         const wrapper = document.createElement('div');
         wrapper.style.cssText = 'width:100%; display:flex; justify-content:center;';
@@ -262,13 +401,46 @@
       { rootMargin: `${margin}px` }
     );
     observer.observe(sentinel);
+
+    if (config.get('keyboardNav')) {
+      document.addEventListener('keydown', (e) => {
+        if (e.target.matches('input, textarea')) return;
+        if (e.key === 'ArrowRight' || e.key === ' ') {
+          e.preventDefault();
+          loadNext();
+        } else if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          history.back();
+        }
+      });
+    }
   }
 
+  function extractOriginalUrl(data) {
+    const html = (data.i7 || '') + (data.i6 || '');
+    const m = html.match(/fullimg\.php[^"'<>]+/);
+    if (m) {
+      let url = m[0];
+      if (url.startsWith('fullimg')) url = location.origin + '/' + url;
+      else if (!url.startsWith('http')) url = location.origin + '/' + url.replace(/^\/+/, '');
+      return url.replace(/&/g, '&');
+    }
+    return null;
+  }
+
+  let downloadAbort = false;
+
   async function startDownload() {
+    if (dlBtn.textContent.includes('Cancel')) {
+      downloadAbort = true;
+      return;
+    }
+    downloadAbort = false;
     const format = config.get('downloadFormat');
     const includeMeta = config.get('includeComicInfo');
-    dlBtn.disabled = true;
-    dlBtn.textContent = 'Preparing…';
+    const preferOrig = config.get('preferOriginal');
+    const range = config.get('downloadRange');
+    dlBtn.textContent = '✖ Cancel';
 
     try {
       const galleryLink = document.querySelector('#i5 a')?.href;
@@ -282,11 +454,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
-          method: 'gdata',
-          gidlist: [[gid, token]],
-          namespace: 1
-        })
+        body: JSON.stringify({ method: 'gdata', gidlist: [[gid, token]], namespace: 1 })
       });
       const metaJson = await metaRes.json();
       const meta = metaJson.gmetadata?.[0];
@@ -296,12 +464,16 @@
       const filecount = parseInt(meta.filecount, 10) || 0;
       if (!filecount) throw new Error('No pages found');
 
-      dlBtn.textContent = `0 / ${filecount}`;
+      const startPage = range === 'from-current'
+        ? (window.startpage || parseInt(location.pathname.match(/-(\d+)$/)?.[1] || '1', 10))
+        : 1;
 
       let currentKey = location.pathname.split('/')[2];
-
       const images = [];
+
       for (let p = 1; p <= filecount; p++) {
+        if (downloadAbort) throw new Error('Cancelled');
+        dlBtn.textContent = `Meta ${p}/${filecount}`;
         const pageRes = await fetch(window.api_url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -317,12 +489,19 @@
         const pageData = await pageRes.json();
         if (!pageData.i3) throw new Error(`Failed page ${p}`);
 
-        const tmp = document.createElement('div');
-        tmp.innerHTML = pageData.i3;
-        const img = tmp.querySelector('img');
-        if (!img?.src) throw new Error(`No src for page ${p}`);
-
-        images.push({ page: p, url: img.src, name: `${String(p).padStart(3, '0')}.${(img.src.match(/\.(\w+)(?:\?|$)/) || ['','jpg'])[1]}` });
+        if (p >= startPage) {
+          const tmp = document.createElement('div');
+          tmp.innerHTML = pageData.i3;
+          const img = tmp.querySelector('img');
+          let url = img?.src;
+          if (preferOrig) {
+            const orig = extractOriginalUrl(pageData);
+            if (orig) url = orig;
+          }
+          if (!url) throw new Error(`No src for page ${p}`);
+          const ext = (url.match(/\.(\w+)(?:\?|$)/) || ['', 'jpg'])[1];
+          images.push({ page: p, url, name: `${String(p).padStart(3, '0')}.${ext}` });
+        }
 
         const navTmp = document.createElement('div');
         navTmp.innerHTML = pageData.n || '';
@@ -331,11 +510,10 @@
           const km = (nextLink.getAttribute('onclick') || '').match(/load_image\(\d+,\s*['"]([0-9a-f]+)['"]\)/);
           if (km) currentKey = km[1];
         }
-        dlBtn.textContent = `${p} / ${filecount} (meta)`;
-        await new Promise(r => setTimeout(r, 150));
+        await new Promise(r => setTimeout(r, 100));
       }
 
-      dlBtn.textContent = 'Downloading images…';
+      dlBtn.textContent = 'Downloading…';
       const zip = new JSZip();
       const folder = zip.folder(sanitize(title)) || zip;
 
@@ -343,7 +521,7 @@
       let done = 0;
       const queue = [...images];
       const workers = Array.from({ length: Math.min(conc, queue.length) }, async () => {
-        while (queue.length) {
+        while (queue.length && !downloadAbort) {
           const item = queue.shift();
           if (!item) break;
           try {
@@ -352,18 +530,18 @@
             const blob = await r.blob();
             folder.file(item.name, blob);
             done++;
-            dlBtn.textContent = `${done} / ${filecount}`;
+            dlBtn.textContent = `${done}/${images.length}`;
           } catch (e) {
             console.warn('Image download failed', item.page, e);
-            folder.file(item.name + '.failed.txt', `Failed to download page ${item.page}: ${e}`);
+            folder.file(item.name + '.failed.txt', `Failed page ${item.page}: ${e}`);
           }
         }
       });
       await Promise.all(workers);
+      if (downloadAbort) throw new Error('Cancelled');
 
       if (includeMeta && (format === 'cbz' || config.get('includeComicInfo'))) {
-        const xml = buildComicInfoXml(meta, title);
-        folder.file('ComicInfo.xml', xml);
+        folder.file('ComicInfo.xml', buildComicInfoXml(meta, title));
       }
 
       dlBtn.textContent = 'Packing…';
@@ -375,11 +553,10 @@
       URL.revokeObjectURL(a.href);
 
       dlBtn.textContent = 'Done';
-      setTimeout(() => { dlBtn.disabled = false; dlBtn.textContent = '⬇ Download'; }, 2000);
+      setTimeout(() => { dlBtn.textContent = '⬇ Download'; }, 2000);
     } catch (err) {
       console.error(err);
-      alert('Download failed: ' + err.message);
-      dlBtn.disabled = false;
+      if (err.message !== 'Cancelled') alert('Download failed: ' + err.message);
       dlBtn.textContent = '⬇ Download';
     }
   }
@@ -409,7 +586,7 @@
   <Month>${m}</Month>
   <Day>${d}</Day>
   <LanguageISO>en</LanguageISO>
-  <Notes>Generated by EH-Congiurator</Notes>
+  <Notes>Generated by EH-Congiurator v1.2</Notes>
 </ComicInfo>`;
   }
 
@@ -417,5 +594,5 @@
     return String(s).replace(/[<>&'"]/g, c => ({ '<': '<', '>': '>', '&': '&', "'": ''', '"': '"' }[c]));
   }
 
-  console.log('[EH-Congiurator] Loaded.');
+  console.log('[EH-Congiurator] v1.2 Loaded.');
 })();
