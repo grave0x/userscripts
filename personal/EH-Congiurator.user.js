@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         EH-Congiurator
 // @namespace    https://github.com/grave0x/userscripts
-// @version      1.2.0
-// @description  Infinite scroll reader + ZIP/CBZ downloader with ComicInfo.xml for E-Hentai / ExHentai image pages. Integrates useful features from other EH scripts.
+// @version      1.3.0
+// @description  Infinite scroll reader + ZIP/CBZ downloader with ComicInfo.xml for E-Hentai / ExHentai. Click zones, fullscreen, page jump, preload, copy URL.
 // @author       grave0x
 // @match        https://e-hentai.org/s/*
 // @match        https://exhentai.org/s/*
@@ -32,7 +32,9 @@
     keyboardNav: true,
     imageFit: 'width',
     showOverlay: true,
-    downloadRange: 'full'
+    downloadRange: 'full',
+    clickZones: true,
+    preloadNext: true
   };
 
   const config = {
@@ -51,7 +53,7 @@
     panel.style.cssText = `
       position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
       background: #1a1a1a; color: #eee; border: 1px solid #444; border-radius: 10px;
-      padding: 18px; z-index: 10000; width: 380px; max-height: 85vh; overflow-y: auto;
+      padding: 18px; z-index: 10000; width: 400px; max-height: 85vh; overflow-y: auto;
       font: 14px system-ui, sans-serif; box-shadow: 0 8px 32px rgba(0,0,0,0.6); display: none;
     `;
     panel.innerHTML = `
@@ -69,6 +71,8 @@
           </select>
         </label>
         <label style="display:block; margin:6px 0;"><input type="checkbox" id="cfg-keys"> Arrow keys / Space to advance</label>
+        <label style="display:block; margin:6px 0;"><input type="checkbox" id="cfg-clickzones"> Click left/right half of image to go previous/next</label>
+        <label style="display:block; margin:6px 0;"><input type="checkbox" id="cfg-preload"> Preload the next image</label>
         <label style="display:block; margin:6px 0;"><input type="checkbox" id="cfg-progress"> Remember where I left off</label>
         <label style="display:block; margin:6px 0;"><input type="checkbox" id="cfg-overlay"> Show title & tags at the top</label>
       </div>
@@ -105,6 +109,8 @@
     panel.querySelector('#cfg-margin').value = c.preloadMargin;
     panel.querySelector('#cfg-fit').value = c.imageFit;
     panel.querySelector('#cfg-keys').checked = c.keyboardNav;
+    panel.querySelector('#cfg-clickzones').checked = c.clickZones;
+    panel.querySelector('#cfg-preload').checked = c.preloadNext;
     panel.querySelector('#cfg-progress').checked = c.saveProgress;
     panel.querySelector('#cfg-overlay').checked = c.showOverlay;
     panel.querySelector('#cfg-format').value = c.downloadFormat;
@@ -119,6 +125,8 @@
       config.set('preloadMargin', parseInt(panel.querySelector('#cfg-margin').value, 10) || 800);
       config.set('imageFit', panel.querySelector('#cfg-fit').value);
       config.set('keyboardNav', panel.querySelector('#cfg-keys').checked);
+      config.set('clickZones', panel.querySelector('#cfg-clickzones').checked);
+      config.set('preloadNext', panel.querySelector('#cfg-preload').checked);
       config.set('saveProgress', panel.querySelector('#cfg-progress').checked);
       config.set('showOverlay', panel.querySelector('#cfg-overlay').checked);
       config.set('downloadFormat', panel.querySelector('#cfg-format').value);
@@ -145,7 +153,7 @@
   function makeBtn(text, bg) {
     const b = document.createElement('button');
     b.textContent = text;
-    b.style.cssText = `background:${bg}; color:#fff; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font:13px system-ui; min-width:120px;`;
+    b.style.cssText = `background:${bg}; color:#fff; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font:13px system-ui; min-width:130px;`;
     return b;
   }
 
@@ -153,14 +161,22 @@
   cfgBtn.onclick = () => configPanel.style.display = configPanel.style.display === 'none' ? 'block' : 'none';
 
   const jumpBtn = makeBtn('⇄ Jump to page', '#555');
-  jumpBtn.onclick = () => {
-    const n = prompt('Jump to page number:');
-    if (!n) return;
-    const page = parseInt(n, 10);
-    if (!page || page < 1) return;
-    const parts = location.pathname.split('/');
-    if (parts.length >= 4) {
-      location.href = parts.slice(0, 3).join('/') + '-' + page + location.search;
+  jumpBtn.onclick = () => doJump();
+
+  const fsBtn = makeBtn('⛶ Fullscreen', '#444');
+  fsBtn.onclick = () => {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+    else document.exitFullscreen();
+  };
+
+  const copyBtn = makeBtn('📋 Copy image URL', '#3a5');
+  copyBtn.onclick = () => {
+    const img = document.querySelector('#eh-infinite-stack img') || document.getElementById('img');
+    if (img?.src) {
+      navigator.clipboard.writeText(img.src).then(() => {
+        copyBtn.textContent = 'Copied';
+        setTimeout(() => copyBtn.textContent = '📋 Copy image URL', 1500);
+      });
     }
   };
 
@@ -169,8 +185,39 @@
 
   btnBar.appendChild(cfgBtn);
   btnBar.appendChild(jumpBtn);
+  btnBar.appendChild(fsBtn);
+  btnBar.appendChild(copyBtn);
   btnBar.appendChild(dlBtn);
   document.body.appendChild(btnBar);
+
+  const jumpBar = document.createElement('div');
+  jumpBar.style.cssText = `
+    position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.75); color: #fff; padding: 6px 10px; border-radius: 6px;
+    font: 13px system-ui; z-index: 9999; display: flex; align-items: center; gap: 6px;
+  `;
+  jumpBar.innerHTML = `
+    <span>Page</span>
+    <input id="eh-jump-input" type="number" min="1" style="width:60px; background:#222; color:#eee; border:1px solid #555; padding:2px 4px; border-radius:3px;">
+    <button id="eh-jump-go" style="background:#4a9eff; color:#fff; border:none; padding:3px 8px; border-radius:3px; cursor:pointer;">Go</button>
+  `;
+  document.body.appendChild(jumpBar);
+  document.getElementById('eh-jump-go').onclick = () => {
+    const n = document.getElementById('eh-jump-input').value;
+    if (n) doJump(n);
+  };
+  document.getElementById('eh-jump-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doJump(e.target.value);
+  });
+
+  function doJump(n) {
+    const page = parseInt(n || prompt('Jump to page number:'), 10);
+    if (!page || page < 1) return;
+    const parts = location.pathname.split('/');
+    if (parts.length >= 4) {
+      location.href = parts.slice(0, 3).join('/') + '-' + page + location.search;
+    }
+  }
 
   function progressKey() {
     const m = location.pathname.match(/\/s\/[^/]+\/(\d+)-/);
@@ -268,6 +315,7 @@
     let nextPageNum = null;
     let isLoading = false;
     let finished = false;
+    let lastLoadedImg = originalImg;
 
     function extractNext() {
       const nextEl = document.getElementById('next');
@@ -317,8 +365,22 @@
     function updateCounter() {
       counter.textContent = totalPages ? `${currentPage} / ${totalPages}` : `Page ${currentPage}`;
       saveProgress(currentPage);
+      const inp = document.getElementById('eh-jump-input');
+      if (inp) inp.value = currentPage;
     }
     updateCounter();
+
+    if (config.get('clickZones')) {
+      document.addEventListener('click', (e) => {
+        if (e.target.closest('#eh-config-panel, #eh-jump-input, button')) return;
+        const img = e.target.closest('img');
+        if (!img) return;
+        const rect = img.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        if (x < rect.width * 0.3) history.back();
+        else if (x > rect.width * 0.7) loadNext();
+      });
+    }
 
     async function loadNext() {
       if (isLoading || finished || !nextImgKey || !nextPageNum) return;
@@ -365,6 +427,30 @@
         wrapper.style.cssText = 'width:100%; display:flex; justify-content:center;';
         wrapper.appendChild(newImg);
         stack.appendChild(wrapper);
+        lastLoadedImg = newImg;
+
+        if (config.get('preloadNext') && data.n) {
+          const navTmp2 = document.createElement('div');
+          navTmp2.innerHTML = data.n;
+          const nextNext = navTmp2.querySelector('#next');
+          if (nextNext) {
+            const mm = (nextNext.getAttribute('onclick') || '').match(/load_image\((\d+),\s*['"]([0-9a-f]+)['"]\)/);
+            if (mm) {
+              fetch(window.api_url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                  method: 'showpage',
+                  gid,
+                  page: parseInt(mm[1], 10),
+                  imgkey: mm[2],
+                  showkey: window.showkey
+                })
+              }).catch(() => {});
+            }
+          }
+        }
 
         currentPage = data.p || nextPageNum;
         const navTmp = document.createElement('div');
@@ -411,6 +497,13 @@
         } else if (e.key === 'ArrowLeft') {
           e.preventDefault();
           history.back();
+        } else if (e.key === 'f' || e.key === 'F') {
+          e.preventDefault();
+          if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+          else document.exitFullscreen();
+        } else if (e.key === 'c' || e.key === 'C') {
+          const img = lastLoadedImg || document.getElementById('img');
+          if (img?.src) navigator.clipboard.writeText(img.src);
         }
       });
     }
@@ -441,6 +534,22 @@
     const preferOrig = config.get('preferOriginal');
     const range = config.get('downloadRange');
     dlBtn.textContent = '✖ Cancel';
+
+    let progBar = document.getElementById('eh-dl-prog');
+    if (!progBar) {
+      progBar = document.createElement('div');
+      progBar.id = 'eh-dl-prog';
+      progBar.style.cssText = `
+        position: fixed; bottom: 70px; right: 16px; width: 200px; height: 6px;
+        background: #333; border-radius: 3px; z-index: 9999; overflow: hidden;
+      `;
+      const fill = document.createElement('div');
+      fill.id = 'eh-dl-fill';
+      fill.style.cssText = 'height:100%; width:0%; background:#4a9eff; transition:width 0.2s;';
+      progBar.appendChild(fill);
+      document.body.appendChild(progBar);
+    }
+    const fill = document.getElementById('eh-dl-fill');
 
     try {
       const galleryLink = document.querySelector('#i5 a')?.href;
@@ -474,6 +583,7 @@
       for (let p = 1; p <= filecount; p++) {
         if (downloadAbort) throw new Error('Cancelled');
         dlBtn.textContent = `Meta ${p}/${filecount}`;
+        fill.style.width = `${(p / filecount) * 30}%`;
         const pageRes = await fetch(window.api_url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -531,6 +641,7 @@
             folder.file(item.name, blob);
             done++;
             dlBtn.textContent = `${done}/${images.length}`;
+            fill.style.width = `${30 + (done / images.length) * 70}%`;
           } catch (e) {
             console.warn('Image download failed', item.page, e);
             folder.file(item.name + '.failed.txt', `Failed page ${item.page}: ${e}`);
@@ -545,6 +656,7 @@
       }
 
       dlBtn.textContent = 'Packing…';
+      fill.style.width = '100%';
       const blob = await zip.generateAsync({ type: 'blob' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -553,11 +665,15 @@
       URL.revokeObjectURL(a.href);
 
       dlBtn.textContent = 'Done';
-      setTimeout(() => { dlBtn.textContent = '⬇ Download'; }, 2000);
+      setTimeout(() => {
+        dlBtn.textContent = '⬇ Download';
+        if (progBar) progBar.remove();
+      }, 2000);
     } catch (err) {
       console.error(err);
       if (err.message !== 'Cancelled') alert('Download failed: ' + err.message);
       dlBtn.textContent = '⬇ Download';
+      if (progBar) progBar.remove();
     }
   }
 
@@ -586,7 +702,7 @@
   <Month>${m}</Month>
   <Day>${d}</Day>
   <LanguageISO>en</LanguageISO>
-  <Notes>Generated by EH-Congiurator v1.2</Notes>
+  <Notes>Generated by EH-Congiurator v1.3</Notes>
 </ComicInfo>`;
   }
 
@@ -594,5 +710,5 @@
     return String(s).replace(/[<>&'"]/g, c => ({ '<': '<', '>': '>', '&': '&', "'": ''', '"': '"' }[c]));
   }
 
-  console.log('[EH-Congiurator] v1.2 Loaded.');
+  console.log('[EH-Congiurator] v1.3 Loaded.');
 })();
